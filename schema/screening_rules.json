@@ -1,0 +1,59 @@
+{
+  "topic_must_include": [
+    "CO2 hydrogenation"
+  ],
+  "product_focus_any": [
+    "higher alcohols",
+    "C2+ alcohols",
+    "mixed alcohols",
+    "ethanol",
+    "propanol",
+    "butanol"
+  ],
+  "allowed_document_types": [
+    "article",
+    "review",
+    "perspective",
+    "communication",
+    "mechanistic_study"
+  ],
+  "exclude_if": [
+    "pure CO2 electroreduction",
+    "only methanation without higher alcohol relevance",
+    "only generic carbon neutrality discussion",
+    "duplicate"
+  ],
+  "core_criteria_any": {
+    "cas_partition_max": 2,
+    "impact_factor_min": 5,
+    "citation_count_min": 50
+  },
+  "supplement_rules": {
+    "allow_recent_high_relevance": true,
+    "recent_year_window": 3,
+    "allow_low_citation_if_mechanistically_important": true
+  },
+  "priority_focus": [
+    "review",
+    "zeolite",
+    "acidity",
+    "support effect",
+    "metal-support interaction",
+    "C-C coupling",
+    "RWGS",
+    "tandem catalysis",
+    "bifunctional catalysis"
+  ],
+  "scoring": {
+    "topic_relevance_max": 40,
+    "journal_quality_max": 20,
+    "citation_impact_max": 20,
+    "mechanistic_value_max": 15,
+    "recency_bonus_max": 5
+  },
+  "priority_thresholds": {
+    "priority_read": 80,
+    "core_include": 65,
+    "supplement_include": 50
+  }
+}

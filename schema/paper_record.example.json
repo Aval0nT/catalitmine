@@ -1,0 +1,61 @@
+{
+  "paper_id": "CO2HA-0001",
+  "title": "Selective hydrogenation of CO2 to higher alcohols over bifunctional Cu-ZnO/HZSM-5 catalysts",
+  "authors": ["Author A", "Author B", "Author C"],
+  "corresponding_authors": ["Author A"],
+  "year": 2023,
+  "journal": "Applied Catalysis B: Environmental",
+  "publisher": "Elsevier",
+  "doi": "10.xxxx/xxxx",
+  "document_type": "article",
+  "abstract": "Example abstract...",
+  "keywords_author": ["CO2 hydrogenation", "higher alcohols", "HZSM-5"],
+  "keywords_indexed": ["bifunctional catalysis", "acidity"],
+  "language": "en",
+  "url": "https://doi.org/10.xxxx/xxxx",
+  "pdf_url": "",
+
+  "impact_factor": 22.1,
+  "journal_quartile": "Q1",
+  "cas_partition": "1区",
+  "citation_count": 86,
+  "citation_count_source": "OpenAlex",
+  "is_top_journal": true,
+
+  "topic_root": "CO2 hydrogenation",
+  "product_focus": ["higher_alcohols", "c2_plus_alcohols"],
+  "catalyst_system": ["Cu-based", "bifunctional", "zeolite-containing"],
+  "support_type": ["ZnO"],
+  "zeolite_type": ["HZSM-5"],
+  "property_focus": ["acidity", "metal_support_interaction", "confinement_effect"],
+  "mechanism_focus": ["c_c_coupling", "methanol_mediated"],
+  "reaction_pathway": ["methanol-mediated"],
+  "study_type": ["experimental", "mechanistic"],
+
+  "reaction_type": "CO2 hydrogenation",
+  "target_products": ["ethanol", "propanol", "higher_alcohols"],
+  "reaction_conditions": {
+    "temperature_C": 320,
+    "pressure_MPa": 3.0,
+    "h2_co2_ratio": 3,
+    "gHSV": null
+  },
+  "performance_metrics": {
+    "co2_conversion_pct": 18.5,
+    "product_selectivity_pct": {
+      "higher_alcohols": 42.0,
+      "ethanol": 21.3
+    },
+    "space_time_yield": null
+  },
+
+  "search_query_group": "L3_zeolite_acidity",
+  "search_terms_hit": ["CO2 hydrogenation", "higher alcohols", "HZSM-5", "acidity"],
+  "screening_stage": "included",
+  "include_decision": "include",
+  "exclude_reason": [],
+  "priority_score": 92,
+  "notes": "分子筛酸性与高碳醇选择性关系强，建议优先精读。",
+  "llm_summary": "This paper reports...",
+  "llm_relevance_reason": "Highly relevant to zeolite-acidity mechanism."
+}

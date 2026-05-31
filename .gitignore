@@ -1,0 +1,105 @@
+# ────────────────────────────────────────────────────────────────────────────
+# Secrets and credentials
+# ────────────────────────────────────────────────────────────────────────────
+.env
+.env.local
+*.key
+*.pem
+**/browser_cookies.txt
+**/cookies.txt
+**/cookies.json
+browser-profile/
+
+# ────────────────────────────────────────────────────────────────────────────
+# Python
+# ────────────────────────────────────────────────────────────────────────────
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ────────────────────────────────────────────────────────────────────────────
+# Node (paper-fetcher-mcp)
+# ────────────────────────────────────────────────────────────────────────────
+node_modules/
+paper-fetcher-mcp/dist/
+paper-fetcher-mcp/node_modules/
+
+# ────────────────────────────────────────────────────────────────────────────
+# Copyrighted material — never commit downloaded PDFs
+# ────────────────────────────────────────────────────────────────────────────
+pdfs/
+topics/*/pdfs/
+topics/shared/pdfs/
+*.pdf
+
+# ────────────────────────────────────────────────────────────────────────────
+# Pipeline intermediates (regeneratable; can be re-derived from PDFs + scripts)
+# ────────────────────────────────────────────────────────────────────────────
+data/00_raw/
+data/01_chunks/
+data/02_enriched/
+data/03_evidence/
+data/04_search/
+data/05_normalized/
+data/zotero_triage_log.jsonl
+
+# ────────────────────────────────────────────────────────────────────────────
+# Databases (contain content derived from copyrighted papers; release a
+# small sample separately if needed)
+# ────────────────────────────────────────────────────────────────────────────
+db/*.db
+db/*.db-journal
+db/*.db-wal
+db/*.db-shm
+
+# ────────────────────────────────────────────────────────────────────────────
+# Generated outputs (regeneratable from db + scripts)
+# ────────────────────────────────────────────────────────────────────────────
+outputs/viz/
+outputs/reports/
+outputs/models/
+outputs/candidates/
+outputs/figures/
+outputs/obsidian/
+figures/
+
+# ────────────────────────────────────────────────────────────────────────────
+# Logs and scratch
+# ────────────────────────────────────────────────────────────────────────────
+logs/
+*.log
+scripts/tmp_*.py
+**/tmp_*
+**/.scratch/
+
+# ────────────────────────────────────────────────────────────────────────────
+# OS / editor
+# ────────────────────────────────────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+Thumbs.db
+.idea/
+.vscode/settings.json
+.vscode/launch.json
+*.swp
+*.swo
+
+# ────────────────────────────────────────────────────────────────────────────
+# Claude Code local overrides (user-specific)
+# ────────────────────────────────────────────────────────────────────────────
+settings.local.json
+.claude/settings.local.json
+
+# ────────────────────────────────────────────────────────────────────────────
+# Misc
+# ────────────────────────────────────────────────────────────────────────────
+*.tmp
+*.bak
+*~
+.ipynb_checkpoints/

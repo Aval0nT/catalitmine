@@ -1,0 +1,58 @@
+{
+  "paper_id": "",
+  "title": "",
+  "authors": [],
+  "corresponding_authors": [],
+  "year": null,
+  "journal": "",
+  "publisher": "",
+  "doi": "",
+  "document_type": "",
+  "abstract": "",
+  "keywords_author": [],
+  "keywords_indexed": [],
+  "language": "",
+  "url": "",
+  "pdf_url": "",
+
+  "impact_factor": null,
+  "journal_quartile": "",
+  "cas_partition": "",
+  "citation_count": null,
+  "citation_count_source": "",
+  "is_top_journal": false,
+
+  "topic_root": "CO2 hydrogenation",
+  "product_focus": [],
+  "catalyst_system": [],
+  "support_type": [],
+  "zeolite_type": [],
+  "property_focus": [],
+  "mechanism_focus": [],
+  "reaction_pathway": [],
+  "study_type": [],
+
+  "reaction_type": "CO2 hydrogenation",
+  "target_products": [],
+  "reaction_conditions": {
+    "temperature_C": null,
+    "pressure_MPa": null,
+    "h2_co2_ratio": null,
+    "gHSV": null
+  },
+  "performance_metrics": {
+    "co2_conversion_pct": null,
+    "product_selectivity_pct": {},
+    "space_time_yield": null
+  },
+
+  "search_query_group": "",
+  "search_terms_hit": [],
+  "screening_stage": "raw_hit",
+  "include_decision": "maybe",
+  "exclude_reason": [],
+  "priority_score": null,
+  "notes": "",
+  "llm_summary": "",
+  "llm_relevance_reason": ""
+}
