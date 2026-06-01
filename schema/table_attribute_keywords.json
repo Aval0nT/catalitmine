@@ -1,0 +1,76 @@
+{
+  "_README": "Maintained keyword library for parsing catalysis tables. The processor (scripts/analysis/build_catalyst_records.py) reads a table's title + header row and uses this file to (1) classify table type, (2) find the catalyst-identity column, (3) map each column header to a canonical attribute. Unmapped headers are kept verbatim (slugified) so no data is lost — extend `column_patterns` over time to improve cross-paper comparability. Matching is case-insensitive substring on the cleaned header; patterns are tried in order, first match wins, so list more specific patterns first.",
+
+  "catalyst_id_headers": [
+    "catalyst", "catalysts", "sample", "samples", "material", "materials",
+    "support", "zeolite", "system", "composition"
+  ],
+
+  "reference_headers": ["ref", "ref.", "refs", "reference", "references", "lit."],
+
+  "skip_headers": ["entry", "no.", "no", "index", "#"],
+
+  "table_type_keywords": {
+    "performance": ["conversion", "selectivity", "yield", "performance",
+                    "catalytic", "activity", "productivity", "sty",
+                    "space-time", "space time", "tof", "ton",
+                    "product distribution", "products"],
+    "textural":    ["bet", "surface area", "pore", "textural", "physical",
+                    "crystallite", "particle size", "porosity", "physisorption"],
+    "acidity":     ["acid", "nh3", "tpd", "bas", "las", "brønsted", "bronsted",
+                    "lewis", "acidity", "pyridine"],
+    "composition": ["si/al", "composition", "loading", "content", "elemental",
+                    "xrf", "icp", "wt%", "molar ratio", "atomic ratio"]
+  },
+
+  "column_patterns": [
+    {"attr": "co2_conversion_pct",   "unit": "%",        "patterns": ["co2 conversion", "co₂ conversion", "x_co2", "xco2", "x co2"]},
+    {"attr": "co_conversion_pct",    "unit": "%",        "patterns": ["co conversion", "x_co", "xco"]},
+    {"attr": "methanol_conversion_pct","unit": "%",      "patterns": ["methanol conversion", "meoh conversion", "x_meoh"]},
+    {"attr": "conversion_pct",       "unit": "%",        "patterns": ["conversion", "conv."]},
+
+    {"attr": "aromatics_selectivity_pct","unit": "%",    "patterns": ["aromatic selectivity", "aromatics selectivity", "s_aromatic", "aromatic sel"]},
+    {"attr": "btx_selectivity_pct",  "unit": "%",        "patterns": ["btx selectivity", "btx sel", "s_btx"]},
+    {"attr": "pxylene_selectivity_pct","unit": "%",      "patterns": ["p-xylene selectivity", "para-xylene selectivity", "px selectivity"]},
+    {"attr": "olefin_selectivity_pct","unit": "%",       "patterns": ["olefin selectivity", "olefins selectivity", "lower olefin"]},
+    {"attr": "co_selectivity_pct",   "unit": "%",        "patterns": ["co selectivity", "s_co"]},
+    {"attr": "ch4_selectivity_pct",  "unit": "%",        "patterns": ["ch4 selectivity", "methane selectivity"]},
+    {"attr": "selectivity_pct",      "unit": "%",        "patterns": ["selectivity", "sel."]},
+
+    {"attr": "aromatics_yield_pct",  "unit": "%",        "patterns": ["aromatic yield", "aromatics yield"]},
+    {"attr": "yield_pct",            "unit": "%",        "patterns": ["yield"]},
+    {"attr": "space_time_yield",     "unit": null,       "patterns": ["space-time yield", "space time yield", "sty", "productivity"]},
+    {"attr": "tof",                  "unit": null,       "patterns": ["tof", "turnover frequency"]},
+    {"attr": "reaction_rate",        "unit": null,       "patterns": ["rate", "r_co", "r co"]},
+
+    {"attr": "bet_surface_area",     "unit": "m2/g",     "patterns": ["s_bet", "sbet", "bet surface", "specific surface", "surface area", "s_total"]},
+    {"attr": "micropore_surface_area","unit": "m2/g",    "patterns": ["s_micro", "smicro", "micropore surface", "micropore area"]},
+    {"attr": "external_surface_area","unit": "m2/g",     "patterns": ["s_ext", "external surface", "mesopore surface"]},
+    {"attr": "total_pore_volume",    "unit": "cm3/g",    "patterns": ["v_total", "vtotal", "total pore volume", "total volume", "pore volume"]},
+    {"attr": "micropore_volume",     "unit": "cm3/g",    "patterns": ["v_micro", "vmicro", "micropore volume"]},
+    {"attr": "mesopore_volume",      "unit": "cm3/g",    "patterns": ["v_meso", "mesopore volume"]},
+    {"attr": "pore_size_nm",         "unit": "nm",       "patterns": ["pore size", "pore diameter", "d_pore"]},
+    {"attr": "crystallite_size_nm",  "unit": "nm",       "patterns": ["crystallite size", "particle size", "crystal size", "d_particle"]},
+
+    {"attr": "total_acidity",        "unit": "umol/g",   "patterns": ["total acid", "c_as", "total acidity", "acid amount", "acid density"]},
+    {"attr": "bronsted_acidity",     "unit": "umol/g",   "patterns": ["c_bas", "brønsted", "bronsted", "bas"]},
+    {"attr": "lewis_acidity",        "unit": "umol/g",   "patterns": ["c_las", "lewis", "las"]},
+    {"attr": "weak_acidity",         "unit": "umol/g",   "patterns": ["weak acid"]},
+    {"attr": "strong_acidity",       "unit": "umol/g",   "patterns": ["strong acid"]},
+    {"attr": "bas_las_ratio",        "unit": null,       "patterns": ["bas/las", "b/l ratio", "brønsted/lewis"]},
+
+    {"attr": "si_al_ratio",          "unit": null,       "patterns": ["si/al", "sio2/al2o3", "si:al"]},
+    {"attr": "metal_loading_wt",     "unit": "wt%",      "patterns": ["loading", "metal content", "wt%", "wt %"]},
+
+    {"attr": "crystallinity_pct",    "unit": "%",        "patterns": ["crystallinity", "relative crystallinity"]},
+
+    {"attr": "temperature_c",        "unit": "C",        "patterns": ["temperature", "temp", "t (°c)", "reaction temperature"]},
+    {"attr": "pressure",             "unit": null,       "patterns": ["pressure", "press", "p (mpa)", "p (bar)", "total pressure"]},
+    {"attr": "whsv",                 "unit": "h-1",      "patterns": ["whsv"]},
+    {"attr": "ghsv",                 "unit": "h-1",      "patterns": ["ghsv", "space velocity"]},
+    {"attr": "contact_time",         "unit": null,       "patterns": ["contact time", "w/f", "flow", "wf", "residence time"]},
+    {"attr": "time_on_stream_h",     "unit": "h",        "patterns": ["time on stream", "tos", "reaction time"]},
+    {"attr": "h2_co2_ratio",         "unit": null,       "patterns": ["h2/co2", "h₂/co₂", "co2/h2", "co₂/h₂"]},
+    {"attr": "h2_co_ratio",          "unit": null,       "patterns": ["h2/co", "co/h", "h₂/co"]}
+  ]
+}
