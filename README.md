@@ -1,4 +1,4 @@
-# Catalysis Literature Mining
+# catalitmine — Catalysis Literature Mining
 
 > A reproducible pipeline that turns catalysis PDFs into a queryable,
 > provenance-tracked database of catalyst systems, reaction conditions, and
@@ -84,8 +84,8 @@ outputs/viz/ · outputs/reports/ · outputs/candidates/
 **Requirements:** Python 3.11+, macOS / Linux, an Anthropic API key.
 
 ```bash
-git clone <this-repo>
-cd Science
+git clone https://github.com/Aval0nT/catalitmine.git
+cd catalitmine
 bash setup_env.sh                       # creates venv, installs deps, fetches CDE2 models
 cp .env.example .env                    # then edit .env, set ANTHROPIC_API_KEY
 source venv/bin/activate
@@ -181,8 +181,8 @@ A methods paper is in preparation. If you use this pipeline before that
 preprint is available, please cite this repository directly:
 
 ```
-Piao, Y. Catalysis Literature Mining (2026).
-https://github.com/<user>/<repo>
+Piao, Y. catalitmine: Catalysis Literature Mining (2026).
+https://github.com/Aval0nT/catalitmine
 ```
 
 ---
