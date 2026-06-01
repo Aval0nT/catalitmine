@@ -43,13 +43,17 @@ ROOT = Path(__file__).resolve().parents[2]
 # ── env ───────────────────────────────────────────────────────────────────────
 
 def _load_env() -> None:
+    """A .env value fills in any variable that is unset OR present but empty
+    (so an exported empty var does not shadow a real key in .env)."""
     env = ROOT / ".env"
     if env.exists():
         for line in env.read_text().splitlines():
             line = line.strip()
             if line and not line.startswith("#") and "=" in line:
                 k, v = line.split("=", 1)
-                os.environ.setdefault(k.strip(), v.strip())
+                k, v = k.strip(), v.strip()
+                if not os.environ.get(k, "").strip():
+                    os.environ[k] = v
 
 _load_env()
 

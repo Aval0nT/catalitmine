@@ -3,6 +3,16 @@
 *Created: 2026-05-06*
 *Status: implemented in scripts/search/{discover,fetch_oa,fetcher}.py*
 
+> **Scope decision (2026-06-01).** The valuable half of Phase 0 is **discovery**
+> (query → relevance-ranked candidate shortlist for manual screening), which
+> mirrors the user's existing workflow: screen OpenAlex abstracts, then download
+> by hand. **Automated PDF acquisition (`fetch_oa.py`) is deliberately kept
+> thin / best-effort and will not be developed further.** Real OA direct-PDF
+> rates in catalysis are low (most ACS/RSC/Elsevier papers are paywalled or
+> expose only JS-rendered landing pages), and manual download is needed anyway
+> (captcha, institutional SSO). Do **not** re-propose building out auto-download.
+> The product of Phase 0 is the markdown shortlist; the human downloads from it.
+
 ---
 
 ## Purpose

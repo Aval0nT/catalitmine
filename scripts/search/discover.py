@@ -41,6 +41,7 @@ import os
 import re
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import date
@@ -59,13 +60,18 @@ CACHE_TTL_S = 24 * 3600
 # ── env / API keys ────────────────────────────────────────────────────────────
 
 def _load_env() -> None:
+    """Load .env. A .env value fills in any variable that is unset OR present
+    but empty in the environment — `setdefault` alone would let an exported
+    empty var (e.g. `ANTHROPIC_API_KEY=`) shadow a real key in .env."""
     env = ROOT / ".env"
     if env.exists():
         for line in env.read_text().splitlines():
             line = line.strip()
             if line and not line.startswith("#") and "=" in line:
                 k, v = line.split("=", 1)
-                os.environ.setdefault(k.strip(), v.strip())
+                k, v = k.strip(), v.strip()
+                if not os.environ.get(k, "").strip():
+                    os.environ[k] = v
 
 _load_env()
 
@@ -103,6 +109,27 @@ def _cache_write(path: Path, data) -> None:
 _last_oa = 0.0
 _last_s2 = 0.0
 
+# S2 auth state: an invalid/expired key returns 401/403. On first such failure
+# we disable the key process-wide and fall back to the public pool, so a bad
+# key in a user's .env degrades gracefully instead of zeroing out expansion.
+_s2_key_disabled = False
+
+def _s2_auth(which: str) -> dict:
+    if which != "s2" or _s2_key_disabled or not S2_API_KEY:
+        return {}
+    return {"x-api-key": S2_API_KEY}
+
+def _disable_s2_key() -> bool:
+    """Disable the S2 key once and report whether a retry should happen."""
+    global _s2_key_disabled
+    if _s2_key_disabled:
+        return False  # already disabled; don't loop
+    _s2_key_disabled = True
+    print("[warn] S2_API_KEY rejected (401/403) — falling back to the public "
+          "pool (1 req/s). Remove or refresh S2_API_KEY in .env to silence.",
+          file=sys.stderr)
+    return True
+
 def _http_get_json(url: str, *, headers: dict | None = None,
                    min_interval: float = 1.0, which: str = "oa") -> dict | list:
     global _last_oa, _last_s2
@@ -110,10 +137,16 @@ def _http_get_json(url: str, *, headers: dict | None = None,
     wait = min_interval - (time.time() - last_ref)
     if wait > 0:
         time.sleep(wait)
-    req = urllib.request.Request(
-        url, headers={**(headers or {}), "User-Agent": USER_AGENT})
-    with urllib.request.urlopen(req, timeout=30) as r:
-        body = r.read()
+    hdrs = {**(headers or {}), **_s2_auth(which), "User-Agent": USER_AGENT}
+    req = urllib.request.Request(url, headers=hdrs)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            body = r.read()
+    except urllib.error.HTTPError as e:
+        if which == "s2" and e.code in (401, 403) and _disable_s2_key():
+            return _http_get_json(url, headers=headers,
+                                  min_interval=min_interval, which=which)
+        raise
     if which == "oa":
         _last_oa = time.time()
     else:
@@ -127,15 +160,18 @@ def _http_post_json(url: str, payload: dict, *, headers: dict | None = None,
     wait = min_interval - (time.time() - last_ref)
     if wait > 0:
         time.sleep(wait)
+    hdrs = {**(headers or {}), **_s2_auth(which),
+            "User-Agent": USER_AGENT, "Content-Type": "application/json"}
     req = urllib.request.Request(
-        url, data=json.dumps(payload).encode(),
-        headers={**(headers or {}),
-                 "User-Agent": USER_AGENT,
-                 "Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=30) as r:
-        body = r.read()
+        url, data=json.dumps(payload).encode(), headers=hdrs, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            body = r.read()
+    except urllib.error.HTTPError as e:
+        if which == "s2" and e.code in (401, 403) and _disable_s2_key():
+            return _http_post_json(url, payload, headers=headers,
+                                   min_interval=min_interval, which=which)
+        raise
     if which == "oa":
         _last_oa = time.time()
     else:
@@ -242,8 +278,10 @@ S2_BASE      = "https://api.semanticscholar.org/graph/v1"
 S2_REC_URL   = "https://api.semanticscholar.org/recommendations/v1/papers"
 S2_FIELDS    = "paperId,externalIds,title,abstract,year,authors,journal," \
                "citationCount,influentialCitationCount,isOpenAccess,openAccessPdf"
-S2_HEADERS   = {"x-api-key": S2_API_KEY} if S2_API_KEY else {}
-S2_INTERVAL  = 0.3 if S2_API_KEY else 1.05
+# Authentication is injected centrally in _s2_auth(); call sites pass which="s2".
+# Use the faster interval only while the key is still trusted.
+def _s2_interval() -> float:
+    return 0.3 if (S2_API_KEY and not _s2_key_disabled) else 1.05
 
 def _s2_paper_to_candidate(p: dict, source_tag: str) -> Optional[Candidate]:
     if not p:
@@ -274,8 +312,8 @@ def s2_references(doi: str, limit: int = 50) -> list[Candidate]:
     url = (f"{S2_BASE}/paper/DOI:{urllib.parse.quote(doi, safe='')}/references"
            f"?fields={S2_FIELDS}&limit={limit}")
     try:
-        data = _http_get_json(url, headers=S2_HEADERS, which="s2",
-                              min_interval=S2_INTERVAL)
+        data = _http_get_json(url, which="s2",
+                              min_interval=_s2_interval())
     except Exception:
         return []
     cands = []
@@ -295,8 +333,8 @@ def s2_citations(doi: str, limit: int = 50) -> list[Candidate]:
     url = (f"{S2_BASE}/paper/DOI:{urllib.parse.quote(doi, safe='')}/citations"
            f"?fields={S2_FIELDS}&limit={limit}")
     try:
-        data = _http_get_json(url, headers=S2_HEADERS, which="s2",
-                              min_interval=S2_INTERVAL)
+        data = _http_get_json(url, which="s2",
+                              min_interval=_s2_interval())
     except Exception:
         return []
     cands = []
@@ -321,8 +359,8 @@ def s2_recommendations(seed_dois: list[str], limit: int = 50) -> list[Candidate]
             url = (f"{S2_BASE}/paper/DOI:{urllib.parse.quote(doi, safe='')}"
                    "?fields=paperId")
             try:
-                data = _http_get_json(url, headers=S2_HEADERS, which="s2",
-                                      min_interval=S2_INTERVAL)
+                data = _http_get_json(url, which="s2",
+                                      min_interval=_s2_interval())
             except Exception:
                 continue
             _cache_write(cache, data)
@@ -338,8 +376,8 @@ def s2_recommendations(seed_dois: list[str], limit: int = 50) -> list[Candidate]
     url  = f"{S2_REC_URL}?fields={S2_FIELDS}&limit={limit}"
     body = {"positivePaperIds": paper_ids}
     try:
-        data = _http_post_json(url, body, headers=S2_HEADERS, which="s2",
-                                min_interval=S2_INTERVAL)
+        data = _http_post_json(url, body, which="s2",
+                                min_interval=_s2_interval())
     except Exception:
         return []
     cands = []
@@ -439,6 +477,55 @@ def _extract_json(text: str) -> Optional[dict]:
 
 def _slug(s: str) -> str:
     return re.sub(r'[^a-z0-9]+', '-', s.lower()).strip('-')[:60]
+
+
+_TAG_RE = re.compile(r'<[^>]+>')
+
+def _clean(s: str) -> str:
+    """Strip inline HTML tags (OpenAlex titles carry <sub>, <i>, etc.)."""
+    return _TAG_RE.sub('', s or '').strip()
+
+
+def write_shortlist(cands: list[Candidate], path: Path, query: str | None,
+                    min_relevance: float = 0.0) -> int:
+    """Write a human-readable markdown shortlist for manual screening.
+
+    One block per paper, sorted as given (relevance-descending). OA papers
+    are flagged so the reader can prioritize what to download by hand.
+    Returns the number of papers written.
+    """
+    lines: list[str] = []
+    lines.append(f"# Discovery shortlist — {query or 'seed expansion'}")
+    lines.append("")
+    lines.append(f"*{len([c for c in cands if (c.relevance or 0) >= min_relevance])} "
+                 f"papers (relevance ≥ {min_relevance:.2f}), sorted by relevance.*")
+    lines.append("*🔓 = open access (try direct download); others need manual / "
+                 "institutional access.*")
+    lines.append("")
+    n = 0
+    for c in cands:
+        if c.relevance is not None and c.relevance < min_relevance:
+            continue
+        n += 1
+        rel  = f"{c.relevance:.2f}" if c.relevance is not None else "—"
+        oa   = " 🔓" if (c.is_open_access or c.oa_url) else ""
+        meta = " · ".join(x for x in [
+            c.venue or None,
+            str(c.year) if c.year else None,
+            f"{c.citation_count} cit" if c.citation_count else None,
+        ] if x)
+        lines.append(f"## [{rel}] {_clean(c.title) or '(untitled)'}{oa}")
+        lines.append(f"`{c.doi}` · https://doi.org/{c.doi}"
+                     + (f"  ·  {meta}" if meta else ""))
+        if c.relevance_reason:
+            lines.append(f"> {c.relevance_reason}")
+        if c.abstract:
+            lines.append("")
+            lines.append(_clean(c.abstract)[:400]
+                         + ("…" if len(c.abstract) > 400 else ""))
+        lines.append("")
+    path.write_text("\n".join(lines), encoding="utf-8")
+    return n
 
 
 def discover(query: str | None,
@@ -576,6 +663,9 @@ def main() -> None:
                     help="Skip Claude relevance scoring (rank by citations × recency)")
     ap.add_argument("--topic", default=None,
                     help="Topic tag for filename (default: derived from query)")
+    ap.add_argument("--min-relevance", type=float, default=0.0,
+                    help="Only list papers scoring ≥ this in the markdown shortlist "
+                         "(default 0.0 = all)")
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args()
 
@@ -595,15 +685,19 @@ def main() -> None:
     )
 
     slug = _slug(args.query or "_".join(args.seed_doi)[:60] or "seeds")
-    out  = OUT_DIR / f"discover_{slug}_{date.today().isoformat()}.jsonl"
+    stamp = date.today().isoformat()
+    out  = OUT_DIR / f"discover_{slug}_{stamp}.jsonl"
+    md   = OUT_DIR / f"shortlist_{slug}_{stamp}.md"
     out.parent.mkdir(parents=True, exist_ok=True)
     with out.open("w", encoding="utf-8") as f:
         for c in cands:
             f.write(json.dumps(c.to_dict(), ensure_ascii=False) + "\n")
+    n_listed = write_shortlist(cands, md, args.query, args.min_relevance)
 
     n_oa     = sum(1 for c in cands if c.is_open_access or c.oa_url)
     n_scored = sum(1 for c in cands if c.relevance is not None)
     print(f"\n[E] wrote {len(cands)} candidates → {out}")
+    print(f"    shortlist ({n_listed} papers) → {md}")
     print(f"    {n_oa} flagged OA · {n_scored} LLM-scored")
     if cands:
         print("\nTop 10:")

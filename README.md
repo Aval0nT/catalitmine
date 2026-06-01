@@ -34,7 +34,7 @@ single fixed schema. This pipeline:
 
 | Phase | Goal | State |
 |---|---|---|
-| 0 | Discovery & Acquisition (query → ranked candidates → OA-only PDF fetch) | ✅ Complete (v1) |
+| 0 | Discovery (query → relevance-ranked screening shortlist; manual download) | ✅ Complete (v1) |
 | 1 | PDF → evidence units (v2 pipeline) | ✅ Complete |
 | 2 | Citation-network provenance | ✅ Complete |
 | 3 | Corpus expansion (target ~200 papers) | 🟡 In progress (25 papers, 6,211 evidence units) |
@@ -107,22 +107,28 @@ cp .env.example .env                    # then edit .env, set ANTHROPIC_API_KEY
 source venv/bin/activate
 ```
 
-**Path 1 — end-to-end from a research query (Phase 0):**
+**Path 1 — discover & screen candidates from a research query (Phase 0):**
 
 ```bash
-# Stage A–E: discover ranked candidates for a topic
+# Discover + rank candidates for a topic; produces a screening shortlist
 python3 scripts/search/discover.py \
         --query "methanol to aromatics ZSM-5 Brønsted acidity" \
-        --top-k 15 --depth 1
-# → data/04_search/discover_<slug>_<date>.jsonl  (LLM-scored, ranked)
+        --top-k 15 --depth 1 --min-relevance 0.6
+# → data/04_search/shortlist_<slug>_<date>.md   (human-readable, relevance-ranked)
+# → data/04_search/discover_<slug>_<date>.jsonl (machine-readable candidates)
+```
 
-# OA-only fetch into the topic PDFs folder
+Open the shortlist `.md`, skim abstracts + relevance scores, and **download the
+PDFs you want by hand** into `topics/<topic>/pdfs/` (DOI-named). Manual download
+is the intended workflow — catalysis papers are largely paywalled, and OA
+direct-PDF coverage is low.
+
+`fetch_oa.py` exists as a *best-effort* convenience for the minority of papers
+with a direct OA PDF (MDPI, arXiv, ChemRxiv); it is not a primary path:
+
+```bash
 python3 scripts/search/fetch_oa.py \
-        --input data/04_search/discover_<slug>_<date>.jsonl \
-        --topic mta \
-        --max 20
-# → topics/mta/pdfs/<doi>.pdf  (only Unpaywall / arXiv / ChemRxiv hits)
-# → data/04_search/manual_queue_<date>.jsonl  (paywalled — for SSO plug-in)
+        --input data/04_search/discover_<slug>_<date>.jsonl --topic mta --dry-run
 ```
 
 **Path 2 — pick up at Phase 1 with PDFs already in hand:**
