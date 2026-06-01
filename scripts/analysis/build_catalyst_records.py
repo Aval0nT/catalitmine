@@ -39,6 +39,28 @@ OUT  = ROOT / "data" / "05_normalized"
 
 NA_TOKENS = {"", "-", "—", "–", "n.d.", "nd", "n/a", "na", "--", "/"}
 
+# Docling/PDF text artifacts: ligature glyphs surface as /uniFB0x or as the
+# unicode ligatures themselves; fix before any matching.
+_LIGATURES = {
+    "/uniFB00": "ff", "/uniFB01": "fi", "/uniFB02": "fl",
+    "/uniFB03": "ffi", "/uniFB04": "ffl",
+    "ﬀ": "ff", "ﬁ": "fi", "ﬂ": "fl",
+    "ﬃ": "ffi", "ﬄ": "ffl",
+}
+
+_GLYPH = re.compile(r'\s*GLYPH<[^>]*>\s*')
+
+def fix_artifacts(s: str) -> str:
+    s = s or ""
+    for bad, good in _LIGATURES.items():
+        if bad in s:
+            s = s.replace(bad, good)
+    # Docling emits GLYPH<...> for unmapped glyphs (usually a hyphen): collapse
+    # "P-ZSM GLYPH<0> 5" -> "P-ZSM-5"
+    if "GLYPH<" in s:
+        s = _GLYPH.sub("-", s).strip("-")
+    return s
+
 # ── keyword library ───────────────────────────────────────────────────────────
 
 def load_kw() -> dict:
@@ -58,7 +80,7 @@ _UNIT_HINT = re.compile(
 
 def clean_header(h: str) -> tuple[str, str | None]:
     """Return (clean_name, unit). 'S_BET[a] [m² g⁻¹]' -> ('S_BET', 'm² g⁻¹')."""
-    h = (h or "").strip()
+    h = fix_artifacts((h or "").strip())
     h = _FOOTNOTE.sub("", h)
     unit = None
     for grp in _BRACKET.findall(h):
@@ -78,10 +100,13 @@ def parse_value(v) -> tuple[float | None, str]:
     """Return (numeric_or_None, raw_string)."""
     if v is None:
         return None, ""
-    s = str(v).strip()
+    s = fix_artifacts(str(v).strip())
     if s.lower() in NA_TOKENS:
         return None, s
     s2 = _FOOTNOTE.sub("", s).strip()
+    # collapse spaces inside numbers from PDF tokenization: "6 . 1" -> "6.1",
+    # "32. 8" -> "32.8" (only between digit/decimal neighbours)
+    s2 = re.sub(r'(?<=[\d.])\s+(?=[\d.])', '', s2)
     m = re.match(r'^([\d.]+)\s*[–\-~to]+\s*([\d.]+)$', s2)   # range -> midpoint
     if m:
         try:
@@ -103,10 +128,15 @@ def norm_label(s: str) -> str:
     """Light within-paper join key: trim, drop footnotes, unify hyphens/space.
     Deliberately conservative — does NOT merge chemically distinct forms
     (H- vs NH4- vs K-), only surface variants."""
-    s = _FOOTNOTE.sub("", str(s or "")).strip()
+    s = fix_artifacts(str(s or ""))
+    s = _FOOTNOTE.sub("", s).strip()
     s = s.replace("–", "-").replace("‐", "-").replace("−", "-")
     s = re.sub(r'\s+', ' ', s)
     return s
+
+def clean_label(s: str) -> str:
+    """Display form of a catalyst label (artifacts fixed, whitespace tidy)."""
+    return re.sub(r'\s+', ' ', fix_artifacts(str(s or "")).strip())
 
 # ── classification / column detection ─────────────────────────────────────────
 
@@ -145,6 +175,20 @@ def map_header(clean_name: str, kw: dict) -> tuple[str, bool]:
             return pat["attr"], True
     return slug(clean_name), False
 
+def is_transposed(headers: list[str], rows: list[list], cat_col: int,
+                  kw: dict) -> bool:
+    """Detect catalyst-as-column tables (metrics down the first column).
+
+    Normal: the non-catalyst HEADERS map to known attributes.
+    Transposed: the FIRST-COLUMN VALUES (row labels) map to attributes, while
+    the other headers are catalyst names. Decide by which side has more
+    attribute hits."""
+    other = [h for j, h in enumerate(headers) if j != cat_col]
+    header_hits = sum(1 for h in other if map_header(clean_header(h)[0], kw)[1])
+    col_vals = [str(r[cat_col]) for r in rows if cat_col < len(r)]
+    val_hits = sum(1 for v in col_vals if map_header(clean_header(v)[0], kw)[1])
+    return val_hits >= 2 and val_hits > header_hits
+
 # ── core ──────────────────────────────────────────────────────────────────────
 
 def build(kw: dict) -> tuple[list[dict], dict]:
@@ -175,11 +219,32 @@ def build(kw: dict) -> tuple[list[dict], dict]:
         "papers": len({t["paper"] for t in tables.values()}),
         "type_counts": Counter(),
         "mapped_cols": 0, "unmapped_cols": 0,
-        "no_catalyst_col": 0,
+        "no_catalyst_col": 0, "transposed": 0,
     }
 
     # per (paper, catalyst-label) accumulator
     records: dict[tuple, dict] = {}
+
+    def get_rec(paper, primary, raw_label, ttype):
+        rkey = (paper, norm_label(raw_label))
+        rec = records.setdefault(rkey, {
+            "paper_doi": paper, "primary_paper_doi": primary,
+            "catalyst_label": raw_label, "table_types": set(),
+            "source_reference": None, "attributes": {},
+        })
+        rec["table_types"].add(ttype)
+        return rec
+
+    def put_attr(rec, attr, unit, val, mapped):
+        num, raw = parse_value(val)
+        if raw == "" or raw.lower() in NA_TOKENS:
+            return
+        stats["mapped_cols" if mapped else "unmapped_cols"] += 1
+        if attr not in rec["attributes"]:          # first non-empty wins
+            rec["attributes"][attr] = {
+                "value": num if num is not None else raw,
+                "unit": unit, "numeric": num is not None,
+            }
 
     for t in tables.values():
         headers = t["headers"]
@@ -192,12 +257,31 @@ def build(kw: dict) -> tuple[list[dict], dict]:
             stats["no_catalyst_col"] += 1
             continue
 
-        # reference column (for review summary tables → provenance)
         low = [h.lower().strip() for h in headers]
         ref_col = next((i for i, h in enumerate(low)
                         if h in kw["reference_headers"] or h.startswith("ref")), None)
 
-        # pre-clean headers once
+        if is_transposed(headers, rows, cat_col, kw):
+            # catalysts are the column HEADERS; each row label is an attribute
+            stats["transposed"] += 1
+            cat_cols = [j for j in range(len(headers))
+                        if j != cat_col and j != ref_col]
+            for row in rows:
+                if cat_col >= len(row):
+                    continue
+                attr_name, unit = clean_header(str(row[cat_col]))
+                attr, mapped = map_header(attr_name, kw)
+                for j in cat_cols:
+                    if j >= len(row):
+                        continue
+                    label = clean_label(headers[j])
+                    if not label or label.lower() in NA_TOKENS:
+                        continue
+                    rec = get_rec(t["paper"], t["primary"], label, ttype)
+                    put_attr(rec, attr, unit, row[j], mapped)
+            continue
+
+        # normal orientation: one catalyst per row
         col_meta = []
         for j, h in enumerate(headers):
             name, unit = clean_header(h)
@@ -207,19 +291,10 @@ def build(kw: dict) -> tuple[list[dict], dict]:
         for row in rows:
             if cat_col >= len(row):
                 continue
-            raw_label = str(row[cat_col]).strip()
+            raw_label = clean_label(row[cat_col])
             if not raw_label or raw_label.lower() in NA_TOKENS:
                 continue
-            rkey = (t["paper"], norm_label(raw_label))
-            rec = records.setdefault(rkey, {
-                "paper_doi": t["paper"],
-                "primary_paper_doi": t["primary"],
-                "catalyst_label": raw_label,
-                "table_types": set(),
-                "source_reference": None,
-                "attributes": {},
-            })
-            rec["table_types"].add(ttype)
+            rec = get_rec(t["paper"], t["primary"], raw_label, ttype)
             for j, val in enumerate(row):
                 if j == cat_col or j >= len(col_meta):
                     continue
@@ -229,16 +304,7 @@ def build(kw: dict) -> tuple[list[dict], dict]:
                         rec["source_reference"] = raw
                     continue
                 attr, unit, mapped = col_meta[j]
-                num, raw = parse_value(val)
-                if raw == "" or raw.lower() in NA_TOKENS:
-                    continue
-                stats["mapped_cols" if mapped else "unmapped_cols"] += 1
-                # don't overwrite an existing numeric with a later blank
-                if attr not in rec["attributes"]:
-                    rec["attributes"][attr] = {
-                        "value": num if num is not None else raw,
-                        "unit": unit, "numeric": num is not None,
-                    }
+                put_attr(rec, attr, unit, val, mapped)
 
     out = []
     for rec in records.values():
@@ -265,6 +331,7 @@ def report(records: list[dict], stats: dict) -> None:
     print(f"  table types              : "
           + ", ".join(f"{t}={c}" for t, c in stats['type_counts'].most_common()))
     print(f"  tables w/o catalyst col  : {stats['no_catalyst_col']}")
+    print(f"  transposed tables fixed  : {stats['transposed']}")
     print(f"  column cells mapped      : {stats['mapped_cols']} "
           f"(+ {stats['unmapped_cols']} kept verbatim)")
     print()
