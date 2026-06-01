@@ -138,6 +138,18 @@ def clean_label(s: str) -> str:
     """Display form of a catalyst label (artifacts fixed, whitespace tidy)."""
     return re.sub(r'\s+', ' ', fix_artifacts(str(s or "")).strip())
 
+_SEP = re.compile(r'[\s\-_/()\[\].,;:]+')
+
+def fuzzy_key(s: str) -> str:
+    """Aggressive WITHIN-PAPER join key: lowercase and drop all separators, so
+    surface variants merge (Zn-C-HZSM-5 = Zn/C-HZSM-5 = ZnCHZSM5) while
+    chemically distinct forms stay apart (H-ZSM-5 → hzsm5 ≠ nh4-zsm-5 → nh4zsm5,
+    ZSM-5(25) → zsm525 ≠ zsm550). Safe because joins are keyed per paper."""
+    s = fix_artifacts(str(s or "")).lower()
+    s = _FOOTNOTE.sub("", s)
+    s = _SUPER.sub("", s)
+    return _SEP.sub("", s)
+
 # ── classification / column detection ─────────────────────────────────────────
 
 def classify_table(title: str, headers: list[str], kw: dict) -> str:
@@ -226,12 +238,21 @@ def build(kw: dict) -> tuple[list[dict], dict]:
     records: dict[tuple, dict] = {}
 
     def get_rec(paper, primary, raw_label, ttype):
-        rkey = (paper, norm_label(raw_label))
-        rec = records.setdefault(rkey, {
-            "paper_doi": paper, "primary_paper_doi": primary,
-            "catalyst_label": raw_label, "table_types": set(),
-            "source_reference": None, "attributes": {},
-        })
+        rkey = (paper, fuzzy_key(raw_label))
+        rec = records.get(rkey)
+        if rec is None:
+            rec = {
+                "paper_doi": paper, "primary_paper_doi": primary,
+                "catalyst_label": raw_label, "label_variants": {raw_label},
+                "table_types": set(), "source_reference": None,
+                "attributes": {},
+            }
+            records[rkey] = rec
+        else:
+            rec["label_variants"].add(raw_label)
+            # keep the most informative (longest) surface form for display
+            if len(raw_label) > len(rec["catalyst_label"]):
+                rec["catalyst_label"] = raw_label
         rec["table_types"].add(ttype)
         return rec
 
@@ -309,8 +330,11 @@ def build(kw: dict) -> tuple[list[dict], dict]:
     out = []
     for rec in records.values():
         rec["table_types"] = sorted(rec["table_types"])
+        rec["label_variants"] = sorted(rec["label_variants"])
+        rec["merged_variants"] = len(rec["label_variants"])
         rec["n_attributes"] = len(rec["attributes"])
         out.append(rec)
+    stats["records_with_merge"] = sum(1 for r in out if r["merged_variants"] > 1)
     return out, stats
 
 # ── reporting ─────────────────────────────────────────────────────────────────
@@ -332,6 +356,8 @@ def report(records: list[dict], stats: dict) -> None:
           + ", ".join(f"{t}={c}" for t, c in stats['type_counts'].most_common()))
     print(f"  tables w/o catalyst col  : {stats['no_catalyst_col']}")
     print(f"  transposed tables fixed  : {stats['transposed']}")
+    print(f"  records w/ merged labels : {stats.get('records_with_merge', 0)} "
+          f"(fuzzy within-paper join)")
     print(f"  column cells mapped      : {stats['mapped_cols']} "
           f"(+ {stats['unmapped_cols']} kept verbatim)")
     print()

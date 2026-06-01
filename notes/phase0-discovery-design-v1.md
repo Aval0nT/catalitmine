@@ -207,6 +207,27 @@ python3 scripts/search/fetch_oa.py \
 
 ---
 
+## Feedback from Phase 1 → Phase 0: Supporting Information (2026-06-01)
+
+Table ingestion revealed that ~15/51 papers yield **zero** main-text tables —
+concentrated in high-impact venues (Nature Catal/Commun, JACS, ACS Catal). For
+the *performance* papers among them, the data tables live in the **Supporting
+Information**, not the main-text PDF; for the *mechanism/spectroscopy* papers,
+there may be no data tables at all (their value is the prose claims, already
+captured by the evidence pipeline).
+
+Implication for Phase 0:
+- The discovery shortlist should **flag that a paper likely has SI** worth
+  downloading (most ACS/RSC/Elsevier/Nature research articles do), so the user
+  grabs the SI PDF during manual download.
+- `scripts/extraction/ingest_tables.py` now **auto-detects SI PDFs** placed
+  alongside the main PDF (`<slug>_SI.pdf`, `<slug>.supporting.pdf`,
+  `<slug>-ESI.pdf`, etc.), ingesting their tables tagged `[SI]` / table number
+  `S1, S2, …`. So the workflow is: screen shortlist → download main + SI by
+  hand → re-run ingest_tables → SI tables flow in automatically.
+- Naming convention for SI files: keep the DOI slug and add an SI marker, e.g.
+  `10.1021_acscatal.5b00192_SI.pdf`.
+
 ## Open questions for v0.2
 
 - Stage A should support multi-query expansion (synonym list) before dedupe,

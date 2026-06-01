@@ -29,18 +29,35 @@ PDF_ROOTS = [ROOT / "pdfs", ROOT / "topics/mta/pdfs",
 LLM_TAG = "docling-tableformer"   # marks rows produced by this tool
 
 
+_SI_PAT = ("si", "supporting", "supp", "supplementary", "supplement", "esi")
+
+def _is_si_name(name: str) -> bool:
+    low = name.lower()
+    return any(tag in low for tag in _SI_PAT)
+
 def find_pdf(doi: str) -> Path | None:
     slug = doi.replace("/", "_")
     for r in PDF_ROOTS:
         p = r / f"{slug}.pdf"
         if p.exists():
             return p
+    # glob, but skip SI files so the main PDF wins
     for r in PDF_ROOTS:
         if r.exists():
-            hits = list(r.glob(f"{slug}*.pdf"))
+            hits = [h for h in r.glob(f"{slug}*.pdf") if not _is_si_name(h.name)]
             if hits:
                 return hits[0]
     return None
+
+def find_si_pdfs(doi: str) -> list[Path]:
+    """Locate Supporting-Information PDFs the user downloaded alongside the
+    main PDF, e.g. <slug>_SI.pdf, <slug>.supporting.pdf, <slug>-ESI.pdf."""
+    slug = doi.replace("/", "_")
+    out: list[Path] = []
+    for r in PDF_ROOTS:
+        if r.exists():
+            out += [h for h in r.glob(f"{slug}*.pdf") if _is_si_name(h.name)]
+    return sorted(set(out))
 
 
 def paper_type(conn: sqlite3.Connection, doi: str) -> str | None:
@@ -56,8 +73,11 @@ def no_table_dois(conn: sqlite3.Connection) -> list[str]:
     return [d for (d,) in cur.fetchall() if d not in with_tables]
 
 
-def extract_tables(pdf: Path, converter):
-    """Return list of (caption, headers, rows, page)."""
+def extract_tables(pdf: Path, converter, *, is_si: bool = False):
+    """Return list of (table_number, caption, headers, rows, page).
+
+    SI tables are numbered S1, S2, … and captioned with an [SI] prefix so they
+    stay traceable to the supplement."""
     result = converter.convert(pdf)
     doc = result.document
     out = []
@@ -84,6 +104,8 @@ def extract_tables(pdf: Path, converter):
             pass
         if not caption:
             caption = f"Table {ti}"
+        if is_si:
+            caption = f"[SI] {caption}"
         # page
         page = None
         try:
@@ -91,7 +113,8 @@ def extract_tables(pdf: Path, converter):
                 page = tbl.prov[0].page_no
         except Exception:
             pass
-        out.append((ti, caption, headers, rows, page))
+        tnum = f"S{ti}" if is_si else str(ti)
+        out.append((tnum, caption, headers, rows, page))
     return out
 
 
@@ -147,11 +170,21 @@ def main() -> None:
         except Exception as e:
             print(f"[{i}/{len(dois)}] {doi}  — convert failed: {e}")
             continue
+        # Supporting Information (if the user downloaded it alongside)
+        si_pdfs = find_si_pdfs(doi)
+        si_tables = []
+        for si in si_pdfs:
+            try:
+                si_tables += extract_tables(si, converter, is_si=True)
+            except Exception as e:
+                print(f"        [SI convert failed: {si.name}: {e}]")
+        all_tables = tables + si_tables
         ptype = paper_type(conn, doi)
-        n = store(conn, doi, ptype, tables)
+        n = store(conn, doi, ptype, all_tables)
         grand += n
-        print(f"[{i}/{len(dois)}] {doi}  — {len(tables)} tables, {n} rows  "
-              f"({ptype or '?'})")
+        si_note = f" (+{len(si_tables)} SI)" if si_pdfs else ""
+        print(f"[{i}/{len(dois)}] {doi}  — {len(tables)} tables{si_note}, "
+              f"{n} rows  ({ptype or '?'})")
     conn.close()
     print(f"\nDone — {grand} table rows ingested across {len(dois)} papers.")
 
