@@ -155,9 +155,13 @@ Organized by pipeline phase.
 
 ```
 scripts/
-├── search/               ← Phase 0-2: literature discovery
-│   ├── search_openalex.py          ← OpenAlex search + Unpaywall OA check
-│   └── semantic_scholar.py         ← Semantic Scholar API (citations, recommendations)
+├── search/               ← Phase 0: discovery & OA acquisition
+│   ├── discover.py                 ← Phase 0 orchestrator (query → ranked candidates)
+│   ├── fetch_oa.py                 ← Phase 0 OA-only PDF fetcher
+│   ├── fetcher.py                  ← PaperFetcher interface + Candidate dataclass
+│   ├── search_openalex.py          ← OpenAlex search + Unpaywall OA check (legacy CSV CLI)
+│   ├── semantic_scholar.py         ← Semantic Scholar API wrapper (citations, recommendations)
+│   └── s2_abstract_dryrun.py       ← abstract-coverage measurement tool
 │
 ├── extraction/           ← Phase 1-2: PDF → structured evidence
 │   ├── chunk_review_pdf.py         ← Stage A: PDF text extraction + chunking

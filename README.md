@@ -34,6 +34,7 @@ single fixed schema. This pipeline:
 
 | Phase | Goal | State |
 |---|---|---|
+| 0 | Discovery & Acquisition (query → ranked candidates → OA-only PDF fetch) | ✅ Complete (v1) |
 | 1 | PDF → evidence units (v2 pipeline) | ✅ Complete |
 | 2 | Citation-network provenance | ✅ Complete |
 | 3 | Corpus expansion (target ~200 papers) | 🟡 In progress (25 papers, 6,211 evidence units) |
@@ -50,7 +51,17 @@ Full directory layout: [STRUCTURE.md](STRUCTURE.md).
 Active plan and venue strategy: [notes/project_plan_v1.md](notes/project_plan_v1.md).
 
 ```
-topics/*/pdfs/                      ← input PDFs (DOI-named)
+research query / seed DOI
+        │
+        ▼  scripts/search/discover.py            (Phase 0)
+data/04_search/discover_<slug>_<date>.jsonl     ← ranked Candidate list
+                                                  (LLM-scored relevance, OA URLs)
+        │
+        ▼  scripts/search/fetch_oa.py            (Phase 0)
+topics/*/pdfs/<sanitized_doi>.pdf               ← Open-Access only
+        │                  └─→ data/04_search/manual_queue_<date>.jsonl
+        │                       (paywalled — plug-in InstitutionalFetcher
+        │                        such as paper-fetcher-mcp picks these up)
         │
         ▼  scripts/extraction/extract_docling_v2.py
 data/03_evidence/<doi>.v2_evidence.jsonl
@@ -60,7 +71,7 @@ data/03_evidence/<doi>.ref_resolved.json
         │   (auto-merged into evidence_units → primary_paper_doi)
         │
         ▼  scripts/db/build_db.py
-db/catalysis.db                     ← papers · evidence_units · table_rows
+db/catalysis.db                                 ← papers · evidence_units · table_rows
         │
         ▼  scripts/analysis/*  +  scripts/ml/*
 outputs/viz/ · outputs/reports/ · outputs/candidates/
@@ -70,12 +81,17 @@ outputs/viz/ · outputs/reports/ · outputs/candidates/
 
 | Path | Role |
 |---|---|
+| `scripts/search/discover.py` | **Phase 0** — query → ranked candidate list (OpenAlex + S2 citation network + Claude relevance) |
+| `scripts/search/fetch_oa.py` | **Phase 0** — OA-only PDF fetcher (Unpaywall + arXiv + ChemRxiv) |
+| `scripts/search/fetcher.py` | `PaperFetcher` interface + Candidate dataclass |
 | `scripts/extraction/extract_docling_v2.py` | v2 section-aware evidence extraction |
 | `scripts/extraction/extract_tables_vision.py` | Table extraction (Docling TableFormer + Vision fallback) |
 | `scripts/analysis/resolve_refs_openalex.py` | In-text citation → primary DOI resolver |
-| `scripts/search/semantic_scholar.py` | Corpus expansion via S2 |
+| `scripts/search/semantic_scholar.py` | S2 wrapper (citations, references, recommendations) |
 | `scripts/db/build_db.py` | Evidence JSONL → SQLite |
 | `schema/paper_record.schema.json` | Evidence unit JSON schema |
+
+Design rationale for Phase 0: [notes/phase0-discovery-design-v1.md](notes/phase0-discovery-design-v1.md).
 
 ---
 
@@ -91,7 +107,25 @@ cp .env.example .env                    # then edit .env, set ANTHROPIC_API_KEY
 source venv/bin/activate
 ```
 
-**Run on a single paper:**
+**Path 1 — end-to-end from a research query (Phase 0):**
+
+```bash
+# Stage A–E: discover ranked candidates for a topic
+python3 scripts/search/discover.py \
+        --query "methanol to aromatics ZSM-5 Brønsted acidity" \
+        --top-k 15 --depth 1
+# → data/04_search/discover_<slug>_<date>.jsonl  (LLM-scored, ranked)
+
+# OA-only fetch into the topic PDFs folder
+python3 scripts/search/fetch_oa.py \
+        --input data/04_search/discover_<slug>_<date>.jsonl \
+        --topic mta \
+        --max 20
+# → topics/mta/pdfs/<doi>.pdf  (only Unpaywall / arXiv / ChemRxiv hits)
+# → data/04_search/manual_queue_<date>.jsonl  (paywalled — for SSO plug-in)
+```
+
+**Path 2 — pick up at Phase 1 with PDFs already in hand:**
 
 ```bash
 # 1. Drop a PDF into the topic folder, DOI-named:
