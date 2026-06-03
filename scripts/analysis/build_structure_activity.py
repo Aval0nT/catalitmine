@@ -78,6 +78,22 @@ def doi_from_image(name: str) -> str:
     return slug.replace("_", "/", 1)   # best-effort DOI
 
 
+_ACTIVITY = {"activity", "structure_activity_relation"}
+
+def activity_panels(image: str) -> set | None:
+    """Panel ids classified activity/SA in the sibling figtype.json (gate);
+    None if the figure was never classified (then keep all, with a warning)."""
+    ft = CHARTS / (Path(image).stem + ".figtype.json")
+    if not ft.exists():
+        return None
+    try:
+        data = json.loads(ft.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return {str(p.get("panel")) for p in data.get("panels", [])
+            if p.get("type") in _ACTIVITY}
+
+
 def main() -> None:
     files = sorted(glob.glob(str(CHARTS / "*.chart.json")))
     if not files:
@@ -85,13 +101,20 @@ def main() -> None:
 
     sa_rows, cond_rows = [], []
     skipped = Counter()
+    ungated = 0
     for f in files:
         ce = json.loads(Path(f).read_text(encoding="utf-8"))
         if ce.get("error"):
             skipped["extraction_error"] += 1
             continue
         paper = doi_from_image(ce["image"])
+        gate = activity_panels(ce["image"])     # classifier gate
+        if gate is None:
+            ungated += 1
         for p in ce.get("panels", []):
+            if gate is not None and str(p.get("panel")) not in gate:
+                skipped["gated_non_activity"] += 1
+                continue
             xl = (p.get("x_axis") or {}).get("label", "")
             yl = (p.get("y_axis") or {}).get("label", "")
             if not is_perf(yl):
@@ -151,32 +174,42 @@ def main() -> None:
     print(f"skipped panels             : "
           + ", ".join(f"{k}={v}" for k, v in skipped.most_common()))
 
-    # plot the dominant descriptor relationship
+    # plot the dominant descriptor — ONE SUBPLOT PER METRIC (never merge metrics;
+    # conversion, selectivity, yield are distinct quantities with distinct axes)
     if sa_rows:
         top_desc = Counter(r['x_kind'] for r in sa_rows).most_common(1)[0][0]
         sub = [r for r in sa_rows if r['x_kind'] == top_desc]
+        metrics = sorted(set(r['metric'] for r in sub))
         FIG.mkdir(parents=True, exist_ok=True)
-        fig, ax = plt.subplots(figsize=(7, 5))
-        for (cat, metric), grp in _group(sub):
-            grp = sorted(grp, key=lambda r: r['x_value'])
-            ax.plot([r['x_value'] for r in grp], [r['metric_value'] for r in grp],
-                    marker="o", label=f"{cat} — {metric[:18]}")
-        ax.set_xlabel(top_desc)
-        ax.set_ylabel("performance (%)")
-        ax.set_title(f"Structure–activity from charts: {top_desc} vs performance")
-        ax.legend(fontsize=7)
+        n = len(metrics)
+        fig, axes = plt.subplots(1, n, figsize=(5 * n, 4.2), squeeze=False)
+        for ax, metric in zip(axes[0], metrics):
+            for cat, grp in _by_catalyst(sub, metric):
+                grp = sorted(grp, key=lambda r: r['x_value'])
+                ax.plot([r['x_value'] for r in grp], [r['metric_value'] for r in grp],
+                        marker="o", label=cat)
+            ax.set_xlabel(top_desc)
+            ax.set_ylabel(metric)            # the REAL metric, not "performance"
+            ax.set_title(metric[:40], fontsize=10)
+            ax.legend(fontsize=7)
+        fig.suptitle(f"Structure–activity from charts — {top_desc} vs each metric "
+                     "(metrics kept separate)", fontsize=11)
         fig.tight_layout()
         out = FIG / f"structure_activity_{top_desc}.png"
         fig.savefig(out, dpi=130)
         print(f"\nfigure → {out}")
     print(f"dataset → {sa_path}")
+    if ungated:
+        print(f"[warn] {ungated} figures had no figtype.json (not gated) — run "
+              "classify_figures.py on their folder for a clean activity gate.")
     print("\nNote: grows as you run extract_figures + chart_extractor on more papers.")
 
 
-def _group(rows):
+def _by_catalyst(rows, metric):
     g: dict = {}
     for r in rows:
-        g.setdefault((r['catalyst'], r['metric']), []).append(r)
+        if r['metric'] == metric:
+            g.setdefault(r['catalyst'], []).append(r)
     return g.items()
 
 
