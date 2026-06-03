@@ -59,6 +59,11 @@ def fix_artifacts(s: str) -> str:
     # "P-ZSM GLYPH<0> 5" -> "P-ZSM-5"
     if "GLYPH<" in s:
         s = _GLYPH.sub("-", s).strip("-")
+    # DOCX tables carry markdown bold and embedded newlines in headers/cells
+    if "**" in s:
+        s = s.replace("**", "")
+    if "\n" in s or "\r" in s:
+        s = s.replace("\r", " ").replace("\n", " ")
     return s
 
 # ── keyword library ───────────────────────────────────────────────────────────
@@ -123,6 +128,21 @@ def parse_value(v) -> tuple[float | None, str]:
 
 def slug(s: str) -> str:
     return re.sub(r'[^a-z0-9]+', '_', (s or "").lower()).strip('_') or "col"
+
+_NUMERIC_LABEL = re.compile(r'^[\d.\s%/+-]+$')
+
+def is_numeric_label(s: str) -> bool:
+    """A catalyst label that is only digits/punctuation is a mis-detected
+    catalyst column (e.g. a value column), not a catalyst name."""
+    return bool(_NUMERIC_LABEL.match((s or "").strip()))
+
+def is_headerless(headers: list[str]) -> bool:
+    """Docling returns positional integer column names ('0','1',...) when it
+    fails to find a header row; such tables can't be mapped to attributes."""
+    clean = [str(h).strip() for h in headers]
+    positional = sum(1 for h in clean
+                     if h == "" or re.fullmatch(r'\d+', h) or h.lower() == "nan")
+    return positional >= max(1, len(clean)) * 0.6
 
 def norm_label(s: str) -> str:
     """Light within-paper join key: trim, drop footnotes, unify hyphens/space.
@@ -213,19 +233,28 @@ def normalize_unit(attr: str, value, unit):
         return round(value * 1000.0, 1), "umol/g"
     return value, unit
 
+def _attr_hit(name: str, kw: dict) -> bool:
+    """Does a string denote an attribute name? Excludes composition attrs that
+    commonly appear *inside* catalyst names (Si/Al15-P, 3Zn-..) and would
+    otherwise fool transpose detection."""
+    attr, mapped = map_header(clean_header(name)[0], kw)
+    if attr in ("si_al_ratio", "metal_loading_wt"):
+        return False
+    return mapped
+
 def is_transposed(headers: list[str], rows: list[list], cat_col: int,
                   kw: dict) -> bool:
     """Detect catalyst-as-column tables (metrics down the first column).
 
-    Normal: the non-catalyst HEADERS map to known attributes.
+    Normal: the non-catalyst HEADERS map to attributes.
     Transposed: the FIRST-COLUMN VALUES (row labels) map to attributes, while
-    the other headers are catalyst names. Decide by which side has more
-    attribute hits."""
+    the other headers are catalyst names. Requires a clear margin so that
+    catalyst codes containing attribute-like substrings don't trip it."""
     other = [h for j, h in enumerate(headers) if j != cat_col]
-    header_hits = sum(1 for h in other if map_header(clean_header(h)[0], kw)[1])
+    header_hits = sum(1 for h in other if _attr_hit(h, kw))
     col_vals = [str(r[cat_col]) for r in rows if cat_col < len(r)]
-    val_hits = sum(1 for v in col_vals if map_header(clean_header(v)[0], kw)[1])
-    return val_hits >= 2 and val_hits > header_hits
+    val_hits = sum(1 for v in col_vals if _attr_hit(v, kw))
+    return val_hits >= 3 and val_hits >= header_hits + 2
 
 # ── core ──────────────────────────────────────────────────────────────────────
 
@@ -258,6 +287,7 @@ def build(kw: dict) -> tuple[list[dict], dict]:
         "type_counts": Counter(),
         "mapped_cols": 0, "unmapped_cols": 0,
         "no_catalyst_col": 0, "transposed": 0, "unit_normalized": 0,
+        "headerless_skipped": 0, "numeric_label_skipped": 0,
     }
 
     # per (paper, catalyst-label) accumulator
@@ -303,6 +333,11 @@ def build(kw: dict) -> tuple[list[dict], dict]:
     for t in tables.values():
         headers = t["headers"]
         rows    = t["rows"]
+
+        if is_headerless(headers):       # positional ('0','1',…) → can't map
+            stats["headerless_skipped"] += 1
+            continue
+
         ttype   = classify_table(t["caption"], headers, kw)
         stats["type_counts"][ttype] += 1
 
@@ -329,7 +364,8 @@ def build(kw: dict) -> tuple[list[dict], dict]:
                     if j >= len(row):
                         continue
                     label = clean_label(headers[j])
-                    if not label or label.lower() in NA_TOKENS:
+                    if not label or label.lower() in NA_TOKENS \
+                       or is_numeric_label(label):
                         continue
                     rec = get_rec(t["paper"], t["primary"], label, ttype)
                     put_attr(rec, attr, unit, row[j], mapped)
@@ -346,7 +382,9 @@ def build(kw: dict) -> tuple[list[dict], dict]:
             if cat_col >= len(row):
                 continue
             raw_label = clean_label(row[cat_col])
-            if not raw_label or raw_label.lower() in NA_TOKENS:
+            if not raw_label or raw_label.lower() in NA_TOKENS \
+               or is_numeric_label(raw_label):
+                stats["numeric_label_skipped"] += 1
                 continue
             rec = get_rec(t["paper"], t["primary"], raw_label, ttype)
             for j, val in enumerate(row):
@@ -388,6 +426,8 @@ def report(records: list[dict], stats: dict) -> None:
     print(f"  table types              : "
           + ", ".join(f"{t}={c}" for t, c in stats['type_counts'].most_common()))
     print(f"  tables w/o catalyst col  : {stats['no_catalyst_col']}")
+    print(f"  headerless tables skipped: {stats['headerless_skipped']}")
+    print(f"  numeric-label rows skipped: {stats['numeric_label_skipped']}")
     print(f"  transposed tables fixed  : {stats['transposed']}")
     print(f"  values unit-normalized   : {stats['unit_normalized']} (K→°C, →MPa, mmol→µmol)")
     print(f"  records w/ merged labels : {stats.get('records_with_merge', 0)} "

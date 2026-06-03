@@ -50,13 +50,22 @@ def find_pdf(doi: str) -> Path | None:
     return None
 
 def find_si_pdfs(doi: str) -> list[Path]:
-    """Locate Supporting-Information PDFs the user downloaded alongside the
-    main PDF, e.g. <slug>_SI.pdf, <slug>.supporting.pdf, <slug>-ESI.pdf."""
+    """Locate Supporting-Information files (PDF or DOCX) the user saved under
+    the naming convention <slug>_SI.<ext>, either next to the main PDF or in a
+    `SI/` subfolder. Docling reads both PDF and DOCX."""
     slug = doi.replace("/", "_")
-    out: list[Path] = []
+    dirs = []
     for r in PDF_ROOTS:
-        if r.exists():
-            out += [h for h in r.glob(f"{slug}*.pdf") if _is_si_name(h.name)]
+        dirs += [r, r / "SI"]
+    out: list[Path] = []
+    for r in dirs:
+        if not r.exists():
+            continue
+        for ext in ("pdf", "docx"):
+            out += list(r.glob(f"{slug}_SI.{ext}"))
+            # also accept publisher-style SI names sitting in a SI/ folder
+            if r.name == "SI":
+                out += [h for h in r.glob(f"{slug}*.{ext}") if _is_si_name(h.name)]
     return sorted(set(out))
 
 
