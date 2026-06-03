@@ -130,7 +130,18 @@ Rules:
 - Read the AXIS LABELS exactly as printed (do not guess the quantity).
 - Read tick values; estimate each point's (x, y) against them.
 - Only include series/points you can actually see. Never invent data.
-- Lower "confidence" and explain in "notes" when unsure."""
+- Lower "confidence" and explain in "notes" when unsure.
+
+STACKED BAR CHARTS (segments piled on top of each other to a cumulative total,
+e.g. product distributions B/T/EB/PX/MX/OX/TriMB):
+- Each segment's value is its OWN height = (top boundary − bottom boundary),
+  read from the baseline upward — NOT the cumulative position of its top edge.
+- Work bottom-up: the bottom segment's value = its top boundary; each higher
+  segment = (its top boundary) − (the segment top below it).
+- The segment values within one bar should sum to the bar's total height.
+- Represent each catalyst bar as a panel "series" whose name is the catalyst,
+  with points {"x": "<product label>", "y": <segment height>}.
+  (Do NOT report cumulative tops.)"""
 
 
 class VisionChartExtractor:
