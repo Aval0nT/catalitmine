@@ -187,6 +187,32 @@ def map_header(clean_name: str, kw: dict) -> tuple[str, bool]:
             return pat["attr"], True
     return slug(clean_name), False
 
+_ACIDITY_ATTRS = ("total_acidity", "bronsted_acidity", "lewis_acidity",
+                  "weak_acidity", "strong_acidity")
+
+def normalize_unit(attr: str, value, unit):
+    """Normalise units at the source so downstream analysis is consistent.
+    Returns (normalised_value, canonical_unit). Conservative: converts only
+    where the unit is explicit or the value is physically unambiguous."""
+    if value is None:
+        return value, unit
+    u = (unit or "").lower()
+    if attr == "temperature_c":
+        # explicit Kelvin, or a value too high to be °C for these reactions
+        if ("k" in u and "c" not in u) or value > 500:
+            return round(value - 273.15, 1), "°C"
+        return value, "°C"
+    if attr == "pressure":
+        if "mpa" in u:  return value, "MPa"
+        if "bar" in u:  return round(value / 10.0, 3), "MPa"
+        if "kpa" in u:  return round(value / 1000.0, 3), "MPa"
+        if "psi" in u:  return round(value / 145.04, 3), "MPa"
+        if "atm" in u:  return round(value / 9.869, 3), "MPa"
+        return value, unit            # unitless values are already MPa-range here
+    if attr in _ACIDITY_ATTRS and "mmol" in u:
+        return round(value * 1000.0, 1), "umol/g"
+    return value, unit
+
 def is_transposed(headers: list[str], rows: list[list], cat_col: int,
                   kw: dict) -> bool:
     """Detect catalyst-as-column tables (metrics down the first column).
@@ -231,7 +257,7 @@ def build(kw: dict) -> tuple[list[dict], dict]:
         "papers": len({t["paper"] for t in tables.values()}),
         "type_counts": Counter(),
         "mapped_cols": 0, "unmapped_cols": 0,
-        "no_catalyst_col": 0, "transposed": 0,
+        "no_catalyst_col": 0, "transposed": 0, "unit_normalized": 0,
     }
 
     # per (paper, catalyst-label) accumulator
@@ -262,10 +288,17 @@ def build(kw: dict) -> tuple[list[dict], dict]:
             return
         stats["mapped_cols" if mapped else "unmapped_cols"] += 1
         if attr not in rec["attributes"]:          # first non-empty wins
-            rec["attributes"][attr] = {
-                "value": num if num is not None else raw,
-                "unit": unit, "numeric": num is not None,
-            }
+            if num is not None:
+                norm_val, canon_unit = normalize_unit(attr, num, unit)
+                if norm_val != num:
+                    stats["unit_normalized"] += 1
+            else:
+                norm_val, canon_unit = raw, unit
+            entry = {"value": norm_val, "unit": canon_unit,
+                     "numeric": num is not None}
+            if num is not None and norm_val != num:
+                entry["raw_value"] = num     # keep original for traceability
+            rec["attributes"][attr] = entry
 
     for t in tables.values():
         headers = t["headers"]
@@ -356,6 +389,7 @@ def report(records: list[dict], stats: dict) -> None:
           + ", ".join(f"{t}={c}" for t, c in stats['type_counts'].most_common()))
     print(f"  tables w/o catalyst col  : {stats['no_catalyst_col']}")
     print(f"  transposed tables fixed  : {stats['transposed']}")
+    print(f"  values unit-normalized   : {stats['unit_normalized']} (K→°C, →MPa, mmol→µmol)")
     print(f"  records w/ merged labels : {stats.get('records_with_merge', 0)} "
           f"(fuzzy within-paper join)")
     print(f"  column cells mapped      : {stats['mapped_cols']} "
