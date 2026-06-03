@@ -320,7 +320,7 @@ https://github.com/Aval0nT/catalitmine
 
 ## Contact
 
-Yuang Piao — Utrecht University, de Jongh group
+Yuang Piao — Materials Chemistry and Catalysis (MCC) group, Utrecht University
 `y.piao@uu.nl`
 
 ---
