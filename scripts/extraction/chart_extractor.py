@@ -91,18 +91,36 @@ class ChartExtractor(Protocol):
     def extract(self, image_path: Path) -> ChartExtraction: ...
 
 
+def _as_axis(a) -> dict:
+    """Coerce an axis field to a dict (models sometimes emit a list or scalar)."""
+    if isinstance(a, dict):
+        return a
+    if isinstance(a, list):
+        return next((e for e in a if isinstance(e, dict)), {})
+    return {}
+
+
 def _parse_panels(obj: dict) -> list[Panel]:
     panels = []
-    for p in obj.get("panels", []):
-        xa, ya = p.get("x_axis") or {}, p.get("y_axis") or {}
+    raw = obj.get("panels", [])
+    if not isinstance(raw, list):
+        return panels
+    for p in raw:
+        if not isinstance(p, dict):
+            continue
+        xa, ya = _as_axis(p.get("x_axis")), _as_axis(p.get("y_axis"))
+        series = []
+        for s in (p.get("series") or []):
+            if not isinstance(s, dict):
+                continue
+            pts = s.get("points")
+            pts = [pt for pt in pts if isinstance(pt, dict)] if isinstance(pts, list) else []
+            series.append(Series(str(s.get("name", "?")), pts))
         panels.append(Panel(
-            panel=p.get("panel"),
-            chart_type=p.get("chart_type"),
+            panel=p.get("panel"), chart_type=p.get("chart_type"),
             x_axis=Axis(xa.get("label"), xa.get("unit"), xa.get("min"), xa.get("max")),
             y_axis=Axis(ya.get("label"), ya.get("unit"), ya.get("min"), ya.get("max")),
-            series=[Series(s.get("name", "?"), s.get("points", []))
-                    for s in p.get("series", [])],
-        ))
+            series=series))
     return panels
 
 
