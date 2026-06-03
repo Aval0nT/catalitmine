@@ -48,6 +48,7 @@ def extract(pdf: Path, out_dir: Path, scale: float = 2.0) -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
     stem = pdf.stem
     n = 0
+    captions: dict[str, str] = {}
     for i, pic in enumerate(doc.pictures, 1):
         img = None
         try:
@@ -64,9 +65,30 @@ def extract(pdf: Path, out_dir: Path, scale: float = 2.0) -> int:
             pass
         dest = out_dir / f"{stem}_fig{i:02d}{page}.png"
         img.save(dest)
+        # capture the figure caption (free, used for type classification)
+        cap = ""
+        try:
+            cap = (pic.caption_text(doc) or "").strip()
+        except Exception:
+            pass
+        captions[dest.name] = _clean_caption(cap)
         n += 1
-        print(f"  saved {dest.name}  ({img.width}x{img.height})")
+        print(f"  saved {dest.name}  ({img.width}x{img.height})"
+              + (f"  | {captions[dest.name][:60]}" if cap else ""))
+    if captions:
+        import json
+        (out_dir / f"{stem}.captions.json").write_text(
+            json.dumps(captions, ensure_ascii=False, indent=2), encoding="utf-8")
     return n
+
+
+_LIG = {"/uniFB00": "ff", "/uniFB01": "fi", "/uniFB02": "fl",
+        "/uniFB03": "ffi", "/uniFB04": "ffl", "ﬀ": "ff", "ﬁ": "fi", "ﬂ": "fl"}
+
+def _clean_caption(s: str) -> str:
+    for bad, good in _LIG.items():
+        s = s.replace(bad, good)
+    return " ".join(s.split())
 
 
 def main() -> None:
