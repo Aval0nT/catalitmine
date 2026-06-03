@@ -27,6 +27,14 @@ designed to generalize to other catalysis reactions.
   BET area ↑ → Brønsted-acid density ↑ (*r* = +0.53). Recovering known physics
   from automatically extracted numbers is direct evidence the data is sound.
   **139 records already support condition–performance analysis.**
+- **Figures → data, mostly API-free** — figures are typed from their *caption*
+  (free, deterministic): characterization (XRD / NH₃-TPD / Raman / IR) is gated
+  out and only activity & structure–activity panels go downstream. A pixel-level
+  CV reader digitises stacked and grouped **bar charts** with no model (validated
+  to ≤0.5 % on tall segments, ±2–4 % on small ones, against printed values).
+  Across the corpus: **48 / 51 papers carry activity figures** (~150 line/scatter,
+  ~43 bar). A line/scatter CV reader (markers + OCR-calibrated axes) is next, to
+  make figure extraction fully model-free.
 
 ---
 
@@ -34,7 +42,7 @@ designed to generalize to other catalysis reactions.
 
 Automated catalyst-data extraction usually either severs the link back to the
 primary source (treating review-stated numbers as facts) or is locked to a
-single fixed schema. This pipeline addresses both, in two complementary tracks:
+single fixed schema. This pipeline addresses both, across complementary tracks:
 
 1. **Discovery** — a research query is expanded via OpenAlex search and the
    Semantic Scholar citation network, then each candidate is relevance-scored
@@ -44,11 +52,15 @@ single fixed schema. This pipeline addresses both, in two complementary tracks:
    header→attribute keyword library, then joined within each paper on the
    catalyst label into per-catalyst records (handles transposed tables,
    ligature/OCR artifacts, and Supporting-Information PDFs).
-3. **Evidence track** — section-aware prose extraction (Claude Haiku 4.5,
+3. **Figure track** — figures are classified by caption keywords (free),
+   keeping only activity / structure–activity panels; a deterministic CV reader
+   digitises bar charts (stacked & grouped) with no model, and a vision backend
+   reads line/scatter points where needed. Output feeds the structure–activity set.
+4. **Evidence track** — section-aware prose extraction (Claude Haiku 4.5,
    prompt-only) captures claims, mechanisms, and conditions, each tagged with a
    **provenance tier**: *gold* (primary paper), *silver* (review with the
    in-text citation resolved to a primary DOI), *bronze* (review synthesis).
-4. **Analysis** — records consolidate into SQLite for density auditing,
+5. **Analysis** — records consolidate into SQLite for density auditing,
    condition–performance correlation, and (next) structure–activity modelling.
 
 ---
@@ -70,7 +82,12 @@ This is an active, single-author research codebase. Interfaces may change.
 performance metric, 164 a structural/textural/acidity property; 139 support
 condition–performance analysis today. Structure–activity records (catalyst with
 both performance *and* property) currently number ~47 and are being grown via
-Supporting-Information tables, chart digitisation, and corpus expansion.
+Supporting-Information tables, figure digitisation, and corpus expansion.
+
+**Figure inventory.** A caption-based scan of all 51 papers (no API) finds
+48 with activity figures — ~150 line/scatter and ~43 bar charts — versus the
+characterization figures (XRD/TPD/IR) that are correctly gated out. Bar charts
+already digitise deterministically; line/scatter digitisation is the next module.
 
 ---
 
@@ -144,6 +161,11 @@ topics/*/pdfs/<doi>.pdf  (+ <doi>_SI.pdf)
 | `scripts/analysis/build_catalyst_records.py` | **Table track** — join a paper's tables on the catalyst label → per-catalyst records |
 | `schema/table_attribute_keywords.json` | Maintainable header→attribute keyword library |
 | `scripts/analysis/validate_data.py` | Density / joinability / correlation go-no-go check |
+| `scripts/extraction/extract_figures.py` | **Figure track** — Docling figure crops + captions |
+| `scripts/extraction/scope_figures.py` | **Figure track** — caption-based corpus figure inventory (no API) |
+| `scripts/extraction/bar_reader.py` | **Figure track** — deterministic CV reader for bar charts (no model) |
+| `scripts/extraction/chart_extractor.py` | **Figure track** — pluggable line/scatter reader (vision backend; CV/LineFormer planned) |
+| `scripts/analysis/build_structure_activity.py` | **Figure track** — chart points → structure–activity dataset |
 | `scripts/extraction/extract_docling_v2.py` | **Evidence track** — section-aware prose extraction |
 | `scripts/analysis/resolve_refs_openalex.py` | In-text citation → primary DOI resolver (provenance) |
 | `scripts/search/semantic_scholar.py` | S2 wrapper (citations, references, recommendations) |
@@ -268,7 +290,13 @@ Strategic detail: [notes/project_plan_v1.md](notes/project_plan_v1.md).
 
 ## Roadmap
 
-- **Phase 4** (next): feature matrix → XGBoost + SHAP for design rules;
+- **Line/scatter CV reader** (next): a model-free reader for line and scatter
+  plots — coloured-marker detection (OpenCV) with OCR-calibrated axes
+  (Tesseract) — so figure digitisation becomes fully deterministic and API-free,
+  matching the bar reader. A standalone, MMDetection-free LineFormer backend is
+  parked on the `feat/lineformer-standalone` branch as a reproducible fallback
+  for dense/crossing curves.
+- **Phase 4**: feature matrix → XGBoost + SHAP for design rules;
   Gaussian-process regression for virtual screening of under-explored
   catalyst combinations.
 - **Phase 5**: integration with a wet-lab validation loop (collaborator-
