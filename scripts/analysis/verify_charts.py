@@ -65,20 +65,48 @@ def panel_html(panel: dict) -> str:
       </div>"""
 
 
-def build(charts_dir: Path, fig_dirs: list[Path]) -> str:
+ACTIVITY_TYPES = {"activity", "structure_activity_relation"}
+
+def _activity_panels(charts_dir: Path, image: str) -> set | None:
+    """Read the sibling .figtype.json; return the set of panel ids classified as
+    activity / structure-activity (or None if no classification exists)."""
+    ft = charts_dir / (Path(image).stem + ".figtype.json")
+    if not ft.exists():
+        return None
+    try:
+        data = json.loads(ft.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return {str(p.get("panel")) for p in data.get("panels", [])
+            if p.get("type") in ACTIVITY_TYPES}
+
+
+def build(charts_dir: Path, fig_dirs: list[Path], activity_only: bool = True) -> str:
     blocks = []
     for jf in sorted(charts_dir.glob("*.chart.json")):
         ce = json.loads(jf.read_text(encoding="utf-8"))
+        act = _activity_panels(charts_dir, ce.get("image", ""))
+        panels = ce.get("panels", [])
+        if activity_only and act is not None:
+            kept = [p for p in panels if str(p.get("panel")) in act]
+            if not kept:
+                continue                       # whole figure is characterization
+            dropped = len(panels) - len(kept)
+            panels = kept
+        else:
+            dropped = 0
         img = find_image(ce.get("image", ""), fig_dirs)
         img_html = (f"<img src='{img_data_uri(img)}'>" if img
                     else "<i>image not found</i>")
         if ce.get("error"):
             body = f"<p class='err'>extraction error: {html.escape(ce['error'])}</p>"
         else:
+            drop_note = (f"<p class='drop'>({dropped} characterization panel(s) "
+                         "hidden — classified as non-activity)</p>" if dropped else "")
             body = (f"<p>confidence: <b>{html.escape(str(ce.get('confidence')))}</b>"
                     + (f" &nbsp;|&nbsp; notes: {html.escape(str(ce.get('notes')))}"
-                       if ce.get('notes') else "") + "</p>"
-                    + "".join(panel_html(p) for p in ce.get("panels", [])))
+                       if ce.get('notes') else "") + "</p>" + drop_note
+                    + "".join(panel_html(p) for p in panels))
         blocks.append(f"""
         <section>
           <h2>{html.escape(ce.get('image',''))}</h2>
@@ -102,6 +130,7 @@ def build(charts_dir: Path, fig_dirs: list[Path]) -> str:
       th,td{{border:1px solid #ddd;padding:4px 6px;text-align:left;vertical-align:top}}
       .cat{{font-weight:600;white-space:nowrap}}
       .err{{color:#b00}}
+      .drop{{color:#888;font-style:italic;margin:4px 0}}
       .hint{{background:#fff3cd;padding:10px;border-radius:6px}}
     </style></head><body>
     <h1>Chart extraction — human verification</h1>
@@ -121,11 +150,14 @@ def main() -> None:
                              str(ROOT / "figures" / "charts")])
     ap.add_argument("--out", default=str(ROOT / "outputs" / "reports"
                                          / f"chart_verification_{date.today().isoformat()}.html"))
+    ap.add_argument("--all-panels", action="store_true",
+                    help="show every panel (default: only activity/SA panels per figtype.json)")
     args = ap.parse_args()
     fig_dirs = [Path(d) for d in args.figures]
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(build(Path(args.charts), fig_dirs), encoding="utf-8")
+    out.write_text(build(Path(args.charts), fig_dirs,
+                         activity_only=not args.all_panels), encoding="utf-8")
     print(f"verification page → {out}")
     print("Open it in a browser, compare each figure with the extracted data,")
     print("and tell me what's wrong. No normalisation until you've confirmed.")
