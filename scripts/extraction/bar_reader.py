@@ -107,6 +107,22 @@ def detect_bars(arr, y_axis_x, baseline_y):
     band = colored[baseline_y - 9: baseline_y - 1, :].sum(axis=0)  # sits on baseline
     band[: y_axis_x + 2] = 0
     on = band >= 4
+    # close small gaps so a thin gridline/annotation inside one bar doesn't split
+    # it into two (groups of separate bars are far apart, so this is safe)
+    maxgap = 20
+    on = on.astype(bool)
+    i = 0
+    n = len(on)
+    while i < n:
+        if not on[i]:
+            j = i
+            while j < n and not on[j]:
+                j += 1
+            if 0 < i and j < n and (j - i) <= maxgap:   # gap flanked by bars
+                on[i:j] = True
+            i = j
+        else:
+            i += 1
     bars, in_bar, start = [], False, 0
     for x in range(len(on)):
         if on[x] and not in_bar:
@@ -136,16 +152,23 @@ def read_stacked(arr, bars, baseline_y, legend):
     out = []
     for (x0, x1) in bars:
         cx = (x0 + x1) // 2
-        strip = arr[:, cx - 1: cx + 2].mean(axis=1)        # avg of 3 central cols
+        xs = list(range(x0 + 2, max(x0 + 3, x1 - 1)))      # columns across the bar
         seg = {}
         order = []
         r = baseline_y - 1
         gap = 0
         while r > 0:
-            name = classify(strip[r], legend)
+            # majority colour across the bar width at this row (robust to a thin
+            # central gap / annotation leader line / antialiased edges)
+            votes = {}
+            for x in xs:
+                nm = classify(arr[r, x], legend)
+                if nm:
+                    votes[nm] = votes.get(nm, 0) + 1
+            name = max(votes, key=votes.get) if votes else None
             if name is None:
                 gap += 1
-                if gap > 4:        # past the top of the bar
+                if gap > 6:        # past the top of the bar
                     break
             else:
                 gap = 0
@@ -156,6 +179,46 @@ def read_stacked(arr, bars, baseline_y, legend):
         total = sum(seg.values())
         out.append({"x0": x0, "x1": x1, "cx": cx, "segments_px": seg,
                     "order_bottom_up": order, "total_px": total})
+    return out
+
+
+def read_grouped(arr, y_axis_x, baseline_y, legend):
+    """GROUPED bars: each product is its own single-colour bar. For each legend
+    colour, find the column-runs that sit on the baseline (= that product's bars)
+    and measure each bar's height (baseline → top of the colour). Returns a list
+    of {product, x0, x1, cx, height_px} sorted left→right."""
+    f = arr.astype(int)
+    out = []
+    for name, (r, g, b) in legend.items():
+        dist = (f[:, :, 0] - r) ** 2 + (f[:, :, 1] - g) ** 2 + (f[:, :, 2] - b) ** 2
+        mask = dist < 70 ** 2
+        band = mask[baseline_y - 9: baseline_y - 1, :].sum(axis=0)
+        band[: y_axis_x + 2] = 0
+        on = band >= 4
+        i = 0
+        while i < len(on):
+            if not on[i]:
+                i += 1
+                continue
+            j = i
+            while j < len(on) and on[j]:
+                j += 1
+            if j - i >= 4:                       # a bar of this product
+                xs = list(range(i + 1, max(i + 2, j - 1)))
+                rr, gap, h = baseline_y - 1, 0, 0
+                while rr > 0:
+                    hit = sum(1 for x in xs if mask[rr, x]) >= max(1, len(xs) // 2)
+                    if hit:
+                        h += 1; gap = 0
+                    else:
+                        gap += 1
+                        if gap > 6:
+                            break
+                    rr -= 1
+                out.append({"product": name, "x0": i, "x1": j,
+                            "cx": (i + j) // 2, "height_px": h})
+            i = j
+    out.sort(key=lambda d: d["cx"])
     return out
 
 
@@ -170,6 +233,8 @@ def main() -> None:
     rp.add_argument("--crop", choices=["top", "bottom"], default=None)
     rp.add_argument("--colors", default="",
                     help="optional 'name:r,g,b;...'; default = top-2 palette colours")
+    rp.add_argument("--grouped", action="store_true",
+                    help="grouped bars (each product a separate single-colour bar)")
     args = ap.parse_args()
 
     if args.cmd == "read":
@@ -184,6 +249,22 @@ def main() -> None:
         else:
             pal = palette(arr, k=2)
             legend = {f"c{i}": rgb for i, (rgb, _) in enumerate(pal)}
+        if args.grouped:
+            g = read_grouped(arr, y_axis_x, baseline_y, legend)
+            print(f"legend colours: {legend}")
+            print(f"grouped bars detected: {len(g)} (left→right)")
+            for k, d in enumerate(g):
+                print(f"  bar{k} cx={d['cx']:4d}  {d['product']:6s}  "
+                      f"height={d['height_px']}px")
+            OUT.mkdir(parents=True, exist_ok=True)
+            im = Image.fromarray(arr).convert("RGB"); dr = ImageDraw.Draw(im)
+            dr.line([(0, baseline_y), (arr.shape[1], baseline_y)], fill=(0, 255, 255))
+            for d in g:
+                dr.line([(d["cx"], baseline_y - d["height_px"]), (d["cx"], baseline_y)],
+                        fill=(255, 0, 255), width=2)
+            dbg = OUT / f"{path.stem}_{args.crop or 'full'}_grouped.png"
+            im.save(dbg); print(f"debug -> {dbg}")
+            return
         bars = detect_bars(arr, y_axis_x, baseline_y)
         res = read_stacked(arr, bars, baseline_y, legend)
         print(f"legend colours: {legend}")
