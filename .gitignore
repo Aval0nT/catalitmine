@@ -24,11 +24,9 @@ __pycache__/
 .ruff_cache/
 
 # ────────────────────────────────────────────────────────────────────────────
-# Node (paper-fetcher-mcp)
+# Node
 # ────────────────────────────────────────────────────────────────────────────
 node_modules/
-paper-fetcher-mcp/dist/
-paper-fetcher-mcp/node_modules/
 
 # ────────────────────────────────────────────────────────────────────────────
 # Copyrighted material — never commit downloaded PDFs
@@ -61,12 +59,7 @@ db/*.db-shm
 # ────────────────────────────────────────────────────────────────────────────
 # Generated outputs (regeneratable from db + scripts)
 # ────────────────────────────────────────────────────────────────────────────
-outputs/viz/
-outputs/reports/
-outputs/models/
-outputs/candidates/
-outputs/figures/
-outputs/obsidian/
+outputs/
 figures/
 
 # ────────────────────────────────────────────────────────────────────────────

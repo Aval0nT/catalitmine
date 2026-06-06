@@ -295,7 +295,9 @@ Strategic detail: [notes/project_plan_v1.md](notes/project_plan_v1.md).
   (Tesseract) — so figure digitisation becomes fully deterministic and API-free,
   matching the bar reader. A standalone, MMDetection-free LineFormer backend is
   parked on the `feat/lineformer-standalone` branch as a reproducible fallback
-  for dense/crossing curves.
+  for dense/crossing curves. Full design — backends, shared axis calibration, and
+  the route-B plan for product-distribution and time-on-stream curves — is in
+  [notes/figure_reader_design.md](notes/figure_reader_design.md).
 - **Phase 4**: feature matrix → XGBoost + SHAP for design rules;
   Gaussian-process regression for virtual screening of under-explored
   catalyst combinations.

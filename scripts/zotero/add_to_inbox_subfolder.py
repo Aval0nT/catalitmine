@@ -53,7 +53,7 @@ def crossref_meta(doi):
     }
 
 INBOX_KEY = "UXFJT8G3"
-SUBFOLDER_NAME = "待下载的部分"
+SUBFOLDER_NAME = "To Download"
 
 DOIS = [
     "10.1016/j.checat.2022.05.012",

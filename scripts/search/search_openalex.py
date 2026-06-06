@@ -25,7 +25,7 @@ from pathlib import Path
 try:
     import requests
 except ImportError:
-    raise SystemExit("请先安装 requests: pip install requests")
+    raise SystemExit("Install requests first: pip install requests")
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT_DIR = ROOT / "data" / "search_results"
@@ -198,9 +198,9 @@ def main():
 
     min_tier_rank = TIER_ORDER[args.min_if_tier]
 
-    print(f"\n搜索关键词: {args.query}")
-    print(f"筛选条件: 引用≥{args.min_citations} | 年份≥{args.min_year} | IF层级≥{args.min_if_tier}")
-    print("正在查询 OpenAlex...")
+    print(f"\nSearch query: {args.query}")
+    print(f"Filters: citations≥{args.min_citations} | year≥{args.min_year} | IF tier≥{args.min_if_tier}")
+    print("Querying OpenAlex...")
 
     raw = openalex_search(
         query=args.query,
@@ -209,7 +209,7 @@ def main():
         max_results=args.max_results,
         email=args.email,
     )
-    print(f"  OpenAlex 返回 {len(raw)} 条结果，开始 IF 筛选 + OA 检查...")
+    print(f"  OpenAlex returned {len(raw)} results; starting IF filter + OA check...")
 
     rows = []
     for i, work in enumerate(raw):
@@ -231,7 +231,7 @@ def main():
         if not args.no_unpaywall and doi:
             is_oa, pdf_url = check_unpaywall(doi, args.email)
             if (i + 1) % 10 == 0:
-                print(f"  已处理 {i+1}/{len(raw)} ...")
+                print(f"  processed {i+1}/{len(raw)} ...")
             time.sleep(0.1)
 
         rows.append({
@@ -263,13 +263,13 @@ def main():
 
     # Summary
     oa_count = sum(1 for r in rows if r["is_oa"])
-    print(f"\n完成！筛选后共 {len(rows)} 篇")
-    print(f"  其中有 OA 全文: {oa_count} 篇 (可直接下载)")
-    print(f"  结果已保存至: {out_path}")
+    print(f"\nDone — {len(rows)} papers after filtering")
+    print(f"  with OA full text: {oa_count} (directly downloadable)")
+    print(f"  results saved to: {out_path}")
 
     # Print top 10 preview
-    print(f"\nTop 10 预览（按引用数排序）:")
-    print(f"{'#':<3} {'年份':<6} {'引用':<6} {'IF层级':<6} {'期刊':<35} {'标题'}")
+    print(f"\nTop 10 preview (sorted by citations):")
+    print(f"{'#':<3} {'Year':<6} {'Cites':<6} {'IFtier':<6} {'Journal':<35} {'Title'}")
     print("-" * 120)
     for i, r in enumerate(rows[:10]):
         oa_mark = "✓OA" if r["is_oa"] else "   "

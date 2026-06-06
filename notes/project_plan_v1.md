@@ -126,8 +126,7 @@ Build an automated, reusable pipeline that:
 
 1. **Data density audit**: run script to count records with ≥10 complete fields (blocks Phase 4)
 2. **Paunović SI data**: check if the 912 MTH entries are publicly released
-3. **Advisor conversation**: not yet had. Demo-first strategy — build visible output (design rules + candidate list) before discussion
-4. **Scope for generalization**: is MTA case study enough for first paper, or does the tool need to be multi-domain from day one? → likely **start domain-specific, generalize in v2**
+3. **Scope for generalization**: is MTA case study enough for first paper, or does the tool need to be multi-domain from day one? → likely **start domain-specific, generalize in v2**
 
 ---
 
@@ -139,5 +138,5 @@ Build an automated, reusable pipeline that:
 | 2–3 | v2 pipeline rollout across all 57 PDFs + provenance resolution |
 | 4 | Feature matrix built; initial XGBoost + SHAP design rules |
 | 5–6 | Virtual screening + top-10 candidate list |
-| 7 | Internal memo / demo material for advisor conversation |
+| 7 | Internal demo material: design rules + candidate list |
 | 8+ | (Contingent on advisor alignment) Paper draft / experimental pilot |

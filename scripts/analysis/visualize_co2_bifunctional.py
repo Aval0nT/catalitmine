@@ -1,13 +1,13 @@
 """
 CO2 Bifunctional Catalyst Visualization
 =========================================
-按化学功能分类催化剂，而不是简单按金属元素：
-  - 加氢组分 (Hydrogenation): 氧化物部分，负责CO2活化
-  - 芳构化组分 (Aromatization): 酸性分子筛部分，负责C-C成键
+Classify catalysts by chemical function rather than by metal element alone:
+  - Hydrogenation component: the oxide part, responsible for CO2 activation
+  - Aromatization component: the acidic zeolite part, responsible for C-C bond formation
 
-Fig 1 — Heatmap: 加氢组分 × 芳构化组分 → CO₂ 转化率
-Fig 2 — Heatmap: 加氢组分 × 芳构化组分 → 芳烃选择性
-Fig 3 — Stripplot: 各加氢组分的CO₂转化率分布（含"无分子筛"对照）
+Fig 1 — Heatmap: hydrogenation component × aromatization component → CO₂ conversion
+Fig 2 — Heatmap: hydrogenation component × aromatization component → aromatic selectivity
+Fig 3 — Stripplot: CO₂ conversion distribution per hydrogenation component (incl. "no zeolite" control)
 
 Usage:
   python3 scripts/analysis/visualize_co2_bifunctional.py
@@ -165,7 +165,7 @@ def plot_conv_heatmap(df: pd.DataFrame, out_dir: Path) -> None:
     draw_heatmap(
         pv.mean().unstack(fill_value=np.nan),
         pv.count().unstack(fill_value=0),
-        title="CO₂ Hydrogenation: CO₂ Conversion\n加氢组分 × 芳构化组分（分子筛）",
+        title="CO₂ Hydrogenation: CO₂ Conversion\nHydrogenation component × Aromatization component (zeolite)",
         cbar_label="Mean CO₂ Conversion (%)",
         vmin=0, vmax=55, cmap="Blues",
         out_path=out_dir / "co2_bifunc_heatmap_conversion.png",
@@ -182,7 +182,7 @@ def plot_aromatic_heatmap(df: pd.DataFrame, out_dir: Path) -> None:
     draw_heatmap(
         pv.mean().unstack(fill_value=np.nan),
         pv.count().unstack(fill_value=0),
-        title="CO₂→Aromatics: Aromatic Selectivity\n加氢组分 × 芳构化组分（分子筛）",
+        title="CO₂→Aromatics: Aromatic Selectivity\nHydrogenation component × Aromatization component (zeolite)",
         cbar_label="Mean Aromatic Selectivity (%)",
         vmin=0, vmax=80, cmap="YlOrRd",
         out_path=out_dir / "co2_bifunc_heatmap_aromatic.png",
@@ -241,7 +241,7 @@ def plot_strip(df: pd.DataFrame, out_dir: Path) -> None:
     ax.set_yticks(range(len(order)))
     ax.set_yticklabels(order, fontsize=10)
     ax.set_xlabel("CO₂ Conversion (%)", fontsize=12)
-    ax.set_title("CO₂ Hydrogenation: Conversion by 加氢组分\n"
+    ax.set_title("CO₂ Hydrogenation: Conversion by hydrogenation component\n"
                  "● with zeolite  ◆ without zeolite  | = median", fontsize=12)
     ax.set_xlim(-2, 110)
     ax.axvline(20, color="grey", lw=0.8, ls="--", alpha=0.5)
@@ -257,11 +257,11 @@ def plot_strip(df: pd.DataFrame, out_dir: Path) -> None:
 # ── Summary ───────────────────────────────────────────────────────────────────
 
 def print_summary(df: pd.DataFrame) -> None:
-    print("\n=== 加氢组分 distribution (all CO₂ units) ===")
+    print("\n=== Hydrogenation component distribution (all CO₂ units) ===")
     print(df["hydro"].value_counts().to_string())
-    print("\n=== 芳构化组分 distribution ===")
+    print("\n=== Aromatization component distribution ===")
     print(df["acid"].value_counts().to_string())
-    print("\n=== 加氢组分 × 芳构化组分 with conv data ===")
+    print("\n=== Hydrogenation × Aromatization component with conv data ===")
     sub = df[df["co2_conv"].between(0.1, 100)]
     print(sub.groupby(["hydro","acid"])["co2_conv"].agg(["mean","count"]).to_string(float_format="{:.1f}".format))
 

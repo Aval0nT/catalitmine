@@ -17,7 +17,7 @@
 
   "impact_factor": 22.1,
   "journal_quartile": "Q1",
-  "cas_partition": "1区",
+  "cas_partition": "Tier 1",
   "citation_count": 86,
   "citation_count_source": "OpenAlex",
   "is_top_journal": true,
@@ -55,7 +55,7 @@
   "include_decision": "include",
   "exclude_reason": [],
   "priority_score": 92,
-  "notes": "分子筛酸性与高碳醇选择性关系强，建议优先精读。",
+  "notes": "Strong link between zeolite acidity and higher-alcohol selectivity; recommended for priority reading.",
   "llm_summary": "This paper reports...",
   "llm_relevance_reason": "Highly relevant to zeolite-acidity mechanism."
 }
