@@ -51,10 +51,7 @@ data/zotero_triage_log.jsonl
 # Databases (contain content derived from copyrighted papers; release a
 # small sample separately if needed)
 # ────────────────────────────────────────────────────────────────────────────
-db/*.db
-db/*.db-journal
-db/*.db-wal
-db/*.db-shm
+db/
 
 # ────────────────────────────────────────────────────────────────────────────
 # Generated outputs (regeneratable from db + scripts)
@@ -96,3 +93,6 @@ settings.local.json
 *.bak
 *~
 .ipynb_checkpoints/
+
+# Internal review notes (not for the public repo)
+notes/code_review_*.md

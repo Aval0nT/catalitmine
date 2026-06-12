@@ -441,7 +441,13 @@ def create_schema(conn: sqlite3.Connection) -> None:
         preparation_method  TEXT,
 
         -- Performance (Pass 2)
+        -- conversions are reaction-specific and never pooled (MTA vs CO2→aromatics);
+        -- conversion_pct holds generic "Conversion (%)" columns whose reactant
+        -- the source table does not name
         methanol_conv_pct   REAL,
+        co2_conv_pct        REAL,
+        co_conv_pct         REAL,
+        conversion_pct      REAL,
         methanol_sel_pct    REAL,   -- methanol selectivity (CO2→MeOH papers); distinct from aromatic_sel_pct
         btx_sel_pct         REAL,
         aromatic_sel_pct    REAL,   -- total aromatics incl. C9+; broader than btx_sel_pct
@@ -504,6 +510,12 @@ def create_schema(conn: sqlite3.Connection) -> None:
     CREATE INDEX IF NOT EXISTS idx_eu_claim    ON evidence_units(claim_type);
     CREATE INDEX IF NOT EXISTS idx_tr_review   ON table_rows(source_review_doi);
     """)
+    # migrate DBs created before these columns existed (CREATE TABLE IF NOT
+    # EXISTS does not add columns to an existing table)
+    have = {r[1] for r in conn.execute("PRAGMA table_info(evidence_units)")}
+    for col in ("co2_conv_pct", "co_conv_pct", "conversion_pct"):
+        if col not in have:
+            conn.execute(f"ALTER TABLE evidence_units ADD COLUMN {col} REAL")
     conn.commit()
 
 
@@ -610,6 +622,9 @@ def import_evidence(conn: sqlite3.Connection) -> int:
                 _safe_float(u.get("methanol_conv_pct")         # v2
                             or u.get("methanol_conversion_pct") # v1
                             or extra.get("methanol_conversion_percent")),
+                _safe_float(u.get("co2_conv_pct")),
+                _safe_float(u.get("co_conv_pct")),
+                _safe_float(u.get("conversion_pct")),
                 # methanol_sel_pct: for CO2→MeOH papers (Zhong 2020 ChemRev),
                 # the LLM placed methanol selectivity into aromatic_sel_pct.
                 # We rescue it here: if this is the Zhong 2020 review and the
@@ -656,9 +671,24 @@ def import_evidence(conn: sqlite3.Connection) -> int:
                 u.get("llm_model"),
                 json.dumps(extra, ensure_ascii=False) if extra else None,
             ))
-        conn.executemany("""INSERT OR REPLACE INTO evidence_units VALUES (
-            ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
-        )""", rows)
+        # explicit column list: stays correct for DBs whose new columns were
+        # added by ALTER (appended at the end of the physical table)
+        conn.executemany("""INSERT OR REPLACE INTO evidence_units (
+            evidence_id, source_review_doi, primary_paper_doi,
+            catalyst_system, active_metal, promoter, support, zeolite_type,
+            si_al_ratio, metal_loading_wt, morphology, modification_method,
+            preparation_method,
+            methanol_conv_pct, co2_conv_pct, co_conv_pct, conversion_pct,
+            methanol_sel_pct, btx_sel_pct, aromatic_sel_pct,
+            benzene_pct, toluene_pct, xylene_pct, c9plus_pct,
+            ethylene_pct, propylene_pct, olefin_pct, paraffin_pct,
+            btx_yield_pct, tos_h, lifetime_h, conversion_drop_pct,
+            coke_content_wt, stability_note,
+            temperature_c, pressure_mpa, whsv, ghsv, feed_methanol_conc,
+            claim_type, claim_subject, claim_predicate, claim_object,
+            proposed_mechanism, evidence_type, confidence, source_reference,
+            source_chunk_id, source_page, source_section, llm_model, extra_json
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", rows)
         conn.commit()
         total += len(rows)
         print(f"  {slug}: {len(rows)} units")
@@ -816,14 +846,18 @@ def main() -> None:
             print_stats(conn)
         return
 
-    # Rebuild
-    if DB_PATH.exists():
-        DB_PATH.unlink()
-        print(f"Deleted existing: {DB_PATH.name}")
-
+    # Rebuild in place — never delete the DB file: table_rows written by
+    # scripts/extraction/ingest_tables.py (llm_model='docling-tableformer')
+    # exist only in the database and would be silently destroyed with it.
+    # Clear only the populations this script rebuilds from data/03_evidence.
     with sqlite3.connect(DB_PATH) as conn:
         create_schema(conn)
-        print("Schema created.\n")
+        conn.execute("DELETE FROM papers")
+        conn.execute("DELETE FROM evidence_units")
+        conn.execute("DELETE FROM table_rows "
+                     "WHERE llm_model IS NULL OR llm_model != 'docling-tableformer'")
+        conn.commit()
+        print("Schema ready (ingest_tables rows preserved).\n")
 
         print("Importing papers...")
         import_papers(conn)

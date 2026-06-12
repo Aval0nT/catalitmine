@@ -50,8 +50,13 @@ _LIGATURES = {
 
 _GLYPH = re.compile(r'\s*GLYPH<[^>]*>\s*')
 
+# Subscript digits are chemistry (CO₂, H₂, C₂H₄), not footnote marks: translate
+# to ASCII so "CO₂ conversion" matches the same patterns as "CO2 conversion"
+# instead of degrading to "CO conversion" when subscripts are stripped.
+_SUBSCRIPT_DIGITS = str.maketrans("₀₁₂₃₄₅₆₇₈₉", "0123456789")
+
 def fix_artifacts(s: str) -> str:
-    s = s or ""
+    s = (s or "").translate(_SUBSCRIPT_DIGITS)
     for bad, good in _LIGATURES.items():
         if bad in s:
             s = s.replace(bad, good)
@@ -75,7 +80,9 @@ def load_kw() -> dict:
 
 _FOOTNOTE = re.compile(r'\[[a-zA-Z0-9]\]')
 _BRACKET  = re.compile(r'[\[\(]([^\]\)]*)[\]\)]')
-_SUPER    = re.compile(r'[ᵃᵇᶜᵈᵉᶠᵍʰⁱʲᵏˡᵐⁿᵒᵖ¹²³⁰-₟]+')
+# superscript footnote marks + non-digit subscripts; subscript DIGITS are
+# excluded (U+2080–U+2089) — fix_artifacts already translated them to ASCII
+_SUPER    = re.compile(r'[ᵃᵇᶜᵈᵉᶠᵍʰⁱʲᵏˡᵐⁿᵒᵖ¹²³⁰-ⁿ₊-₟]+')
 # trailing footnote letter: "T_a", "P b", "R^c", "Conv.a"  (a single a–f after a
 # separator at the end of the header) — these are footnote refs, not the name.
 _TRAIL_FN = re.compile(r'[\s_^.]+[a-f]$', re.IGNORECASE)
@@ -94,6 +101,14 @@ def clean_header(h: str) -> tuple[str, str | None]:
     name = _BRACKET.sub("", h)
     name = _SUPER.sub("", name)               # strip superscript footnote marks
     name = re.sub(r'\s+', ' ', name).strip(" :_^.")
+    # slash-notation units ("temp/ K", "T / °C", "GHSV/h-1") never sit in
+    # brackets, so the bracket pass above misses them; capture the tail when it
+    # looks like a unit (a bare "Si/Al" or "B/L" tail does not)
+    if unit is None:
+        m = re.search(r'\s*/\s*([^/]+?)\s*$', name)
+        if m and len(m.group(1)) <= 12 and _UNIT_HINT.search(m.group(1)):
+            unit = m.group(1).strip()
+            name = name[:m.start()].strip(" :_^.")
     # strip a trailing single-letter footnote ref, but never collapse the whole
     # header to empty (e.g. a genuine 1-char header stays)
     stripped = _TRAIL_FN.sub("", name).strip(" :_^.")
@@ -199,12 +214,38 @@ def find_catalyst_col(headers: list[str], rows: list[list], kw: dict) -> int | N
             return i
     return None
 
-def map_header(clean_name: str, kw: dict) -> tuple[str, bool]:
+def _match_patterns(low: str, kw: dict) -> str | None:
+    """Longest matching pattern wins, so specific patterns beat generic
+    substrings regardless of their order in the library ("space-time yield"
+    beats "yield", "bas/las" beats "bas"). Ties keep first-listed order."""
+    best_attr, best_len = None, 0
+    for pat in kw["column_patterns"]:
+        for p in pat["patterns"]:
+            if len(p) > best_len and p in low:
+                best_attr, best_len = pat["attr"], len(p)
+    return best_attr
+
+def map_header(clean_name: str, kw: dict, unit: str | None = None) -> tuple[str, bool]:
     """Return (canonical_attr_or_slug, was_mapped)."""
     low = clean_name.lower()
-    for pat in kw["column_patterns"]:
-        if any(p in low for p in pat["patterns"]):
-            return pat["attr"], True
+    # Docling flattens two-level headers to "group / leaf" ("product
+    # distribution (%) / CH4"). The LEAF names the quantity — match it first,
+    # or a long group prefix swallows every sibling column into one attribute.
+    if " / " in low:
+        best_attr = _match_patterns(low.rsplit(" / ", 1)[1].strip(), kw)
+        if best_attr:
+            return best_attr, True
+    best_attr = _match_patterns(low, kw)
+    if best_attr:
+        return best_attr, True
+    # short condition headers ("T", "Ta", "P", "Pb") carry their meaning only
+    # in the unit — map via the unit when the name itself is uninformative
+    if unit and len(low.strip()) <= 3:
+        ul = unit.lower()
+        if "°c" in ul or "℃" in ul or ul.strip() in ("c", "k"):
+            return "temperature_c", True
+        if any(x in ul for x in ("mpa", "bar", "atm", "kpa", "psi")):
+            return "pressure", True
     return slug(clean_name), False
 
 _ACIDITY_ATTRS = ("total_acidity", "bronsted_acidity", "lewis_acidity",
@@ -218,8 +259,11 @@ def normalize_unit(attr: str, value, unit):
         return value, unit
     u = (unit or "").lower()
     if attr == "temperature_c":
-        # explicit Kelvin, or a value too high to be °C for these reactions
-        if ("k" in u and "c" not in u) or value > 500:
+        # the explicit unit is authoritative; the >500 heuristic applies only
+        # when no unit was captured (a unit-less value too high to be °C here)
+        if "c" in u:
+            return value, "°C"
+        if "k" in u or value > 500:
             return round(value - 273.15, 1), "°C"
         return value, "°C"
     if attr == "pressure":
@@ -237,7 +281,8 @@ def _attr_hit(name: str, kw: dict) -> bool:
     """Does a string denote an attribute name? Excludes composition attrs that
     commonly appear *inside* catalyst names (Si/Al15-P, 3Zn-..) and would
     otherwise fool transpose detection."""
-    attr, mapped = map_header(clean_header(name)[0], kw)
+    cname, cunit = clean_header(name)
+    attr, mapped = map_header(cname, kw, cunit)
     if attr in ("si_al_ratio", "metal_loading_wt"):
         return False
     return mapped
@@ -359,7 +404,7 @@ def build(kw: dict) -> tuple[list[dict], dict]:
                 if cat_col >= len(row):
                     continue
                 attr_name, unit = clean_header(str(row[cat_col]))
-                attr, mapped = map_header(attr_name, kw)
+                attr, mapped = map_header(attr_name, kw, unit)
                 for j in cat_cols:
                     if j >= len(row):
                         continue
@@ -375,7 +420,7 @@ def build(kw: dict) -> tuple[list[dict], dict]:
         col_meta = []
         for j, h in enumerate(headers):
             name, unit = clean_header(h)
-            attr, mapped = map_header(name, kw)
+            attr, mapped = map_header(name, kw, unit)
             col_meta.append((attr, unit, mapped))
 
         for row in rows:
@@ -410,7 +455,10 @@ def build(kw: dict) -> tuple[list[dict], dict]:
 
 # ── reporting ─────────────────────────────────────────────────────────────────
 
-PERF_ATTRS = ("conversion", "selectivity", "yield", "space_time", "tof", "rate")
+PERF_ATTRS = ("conversion", "selectivity", "yield", "space_time", "tof", "rate",
+              # per-species product percentages (benzene_pct, ethylene_pct, …)
+              "benzene", "toluene", "xylene", "aromatic", "olefin", "paraffin",
+              "methane", "ethylene", "propylene", "btx", "product_fraction")
 PROP_ATTRS = ("surface_area", "pore", "acid", "si_al", "loading", "crystallite")
 
 def has_family(rec: dict, fams: tuple) -> bool:

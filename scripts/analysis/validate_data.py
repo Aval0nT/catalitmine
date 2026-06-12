@@ -46,9 +46,15 @@ GROUPS = {
                     "weak_acidity", "strong_acidity", "bas_las_ratio"],
     "composition": ["si_al_ratio", "metal_loading_wt"],
     "performance": ["co2_conversion_pct", "co_conversion_pct",
-                    "methanol_conversion_pct", "selectivity_pct",
-                    "aromatics_selectivity_pct", "space_time_yield",
-                    "yield_pct", "aromatics_yield_pct"],
+                    "methanol_conversion_pct", "conversion_pct", "selectivity_pct",
+                    "aromatics_selectivity_pct", "btx_selectivity_pct",
+                    "olefin_selectivity_pct", "methanol_selectivity_pct",
+                    "space_time_yield", "yield_pct", "aromatics_yield_pct",
+                    # per-species product percentages are performance metrics too
+                    "benzene_pct", "toluene_pct", "xylenes_pct",
+                    "total_aromatics_pct", "btx_pct", "methane_pct",
+                    "ethylene_pct", "propylene_pct", "light_olefins_pct",
+                    "paraffins_pct"],
 }
 ALL_FEATURES = [f for fs in GROUPS.values() for f in fs]
 

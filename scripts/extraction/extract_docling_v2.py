@@ -45,9 +45,13 @@ MODEL = "claude-haiku-4-5"
 # ---------------------------------------------------------------------------
 
 COLUMN_MAP = {
-    # Performance
-    r"methanol\s*conv":           "methanol_conv_pct",
-    r"conv(?:ersion)?[\s.]*\(?%":  "methanol_conv_pct",
+    # Performance — conversions are reaction-specific and must never be pooled
+    # (MTA vs CO2→aromatics); a generic "Conversion (%)" header goes to the
+    # neutral conversion_pct, not to a reaction-specific field.
+    r"methanol\s*conv|meoh\s*conv":               "methanol_conv_pct",
+    r"co₂\s*conv|co2\s*conv|x\s*[\(\-_ ]?co2":    "co2_conv_pct",
+    r"\bco\s*conv|x\s*[\(\-_ ]?co\b":             "co_conv_pct",
+    r"conv(?:ersion)?[\s.]*\(?%":                  "conversion_pct",
     r"aromatic.*sel|^aromatics$":  "aromatic_sel_pct",
     r"btx.*sel|^btx$":            "btx_sel_pct",
     r"benzene.*sel":              "benzene_pct",
@@ -60,8 +64,10 @@ COLUMN_MAP = {
     r"tos|time.on.stream":       "tos_h",
     r"coke.*content|coke.*wt":   "coke_content_wt",
 
-    # Conditions
-    r"temp.*[°℃]|T\s*/\s*[°℃KC]|temperature.*[KCk°]|\bT\s*\(K\)": "temperature_c",
+    # Conditions — Kelvin-labelled columns are tagged temperature_k and
+    # converted downstream; °C columns are stored as-is (never converted)
+    r"\(\s*K\s*\)|/\s*K\s*$|temperature.*\bK\b":  "temperature_k",
+    r"temp.*[°℃C]|T\s*/\s*[°℃C]|temperature":     "temperature_c",
     r"press.*MPa|P\s*/\s*MPa":    "pressure_mpa",
     r"whsv":                       "whsv",
     r"ghsv":                       "ghsv",
@@ -72,11 +78,11 @@ COLUMN_MAP = {
     r"B\s*/\s*L|B/L":              "bl_ratio",
     r"total\s*acid|NH3.*total":    "total_acid_umol_g",
     r"strong\s*acid|NH3.*strong":  "strong_acid_umol_g",
-    r"weak\s*acid|NH3.*weak":      "total_acid_umol_g",  # fallback
+    r"weak\s*acid|NH3.*weak":      "weak_acid_umol_g",
 
     # Characterization - textural
     r"S\s*BET|BET|surface\s*area.*m": "bet_m2_g",
-    r"S\s*(?:Micro|micro)|micropore.*area": "micropore_vol_cm3_g",  # note: might be area
+    r"S[\s_]*(?:Micro|micro)|micropore.*area": "micropore_sa_m2_g",
     r"S\s*(?:Exter|exter)|external.*area":  "external_sa_m2_g",
     r"V\s*(?:Total|total)|total.*(?:pore|vol)": "total_pore_vol_cm3_g",
     r"V\s*(?:Micro|micro)|micropore.*vol":      "micropore_vol_cm3_g",
@@ -147,24 +153,68 @@ def _extract_conditions_regex(text: str) -> Dict[str, Any]:
         v = float(m.group(1))
         if 150 <= v <= 800: temps.append(v)
     if temps:
-        conditions["temperature_c"] = round(sum(set(temps)) / len(set(temps)), 1)
-        if len(set(round(t) for t in temps)) > 1:
-            conditions["temperature_note"] = f"multiple: {', '.join(str(int(t)) for t in sorted(set(temps)))}°C"
+        distinct = sorted(set(temps))
+        if len(distinct) == 1:
+            conditions["temperature_c"] = distinct[0]
+        else:
+            # several temperatures (calcination / reaction / regeneration steps):
+            # never average across steps — that fabricates a temperature at which
+            # no experiment ran. Keep only a temperature whose local context reads
+            # as the reaction step; otherwise record the list in the note and
+            # leave the numeric field unset.
+            rx = set()
+            for m in re.finditer(r"\b(\d{3})\s*(?:[°◦∘]\s*[Cc]\b|℃)", text):
+                v = float(m.group(1))
+                if not (150 <= v <= 800):
+                    continue
+                # admit by the SENTENCE containing the match (a fixed-width
+                # window leaks the neighbouring sentence's step words); exclude
+                # by the words DIRECTLY BEFORE the number — "calcined at 550 °C"
+                # names a step, but "at 400 °C over the calcined catalyst" is
+                # the reaction with an adjective, and must not be excluded
+                s = text.rfind(". ", 0, m.start()) + 1
+                e = text.find(". ", m.end())
+                ctx = text[s:e if e != -1 else len(text)].lower()
+                pre = text[max(0, m.start() - 60):m.start()].lower()
+                if re.search(r"reaction|reactor|on[\s-]stream|test|evaluat", ctx) \
+                   and not re.search(r"calcin|dried|drying|regener|reduc|pretreat"
+                                     r"|aging|aged|sinter|vaporiz|preheat", pre):
+                    rx.add(v)
+            if len(rx) == 1:
+                conditions["temperature_c"] = rx.pop()
+            conditions["temperature_note"] = \
+                f"multiple: {', '.join(str(int(t)) for t in distinct)}°C"
 
-    # Pressure
-    for m in re.finditer(r"(\d+\.?\d*)\s*MPa", text, re.I):
-        conditions["pressure_mpa"] = float(m.group(1)); break
-    for m in re.finditer(r"(\d+\.?\d*)\s*bar\b", text, re.I):
-        conditions["pressure_mpa"] = round(float(m.group(1)) * 0.1, 4); break
-    for m in re.finditer(r"(\d+\.?\d*)\s*atm\b", text, re.I):
-        conditions["pressure_mpa"] = round(float(m.group(1)) * 0.101325, 4); break
+    # Pressure — judged by the sentence containing each match, not by unit
+    # precedence: "pressed at 20 MPa" (pellet prep) must lose to the actual
+    # reaction pressure even when the latter is in bar/atm. Within the same
+    # context rank, the more specific unit (MPa > bar > atm) wins.
+    _PREP = re.compile(r"press(?:ed|ing)\b|pellet|sieve|mesh|calcin|dried|drying"
+                       r"|regener|reduc|pretreat|physisorption|chemisorption", re.I)
+    _RXN  = re.compile(r"reaction|reactor|carried out|feed|test|evaluat", re.I)
+    cands = []
+    for pat, factor in ((r"(\d+\.?\d*)\s*MPa", 1.0),
+                        (r"(\d+\.?\d*)\s*bar\b", 0.1),
+                        (r"(\d+\.?\d*)\s*atm\b", 0.101325)):
+        for m in re.finditer(pat, text, re.I):
+            s = text.rfind(". ", 0, m.start()) + 1
+            e = text.find(". ", m.end())
+            ctx = text[s:e if e != -1 else len(text)]
+            cands.append((bool(_PREP.search(ctx)), not _RXN.search(ctx),
+                          round(float(m.group(1)) * factor, 4)))
+    if cands:
+        # stable sort: non-prep before prep, reaction-context before neutral;
+        # MPa entries were appended first, so they win ties
+        cands.sort(key=lambda t: (t[0], t[1]))
+        if not cands[0][0]:                      # never take a prep-step pressure
+            conditions["pressure_mpa"] = cands[0][2]
 
-    # WHSV
-    for m in re.finditer(r"WHSV\s*[=:of\s]\s*(\d+\.?\d*)", text, re.I):
+    # WHSV ("WHSV = 2", "WHSV: 2", "WHSV of 2", "WHSV 2")
+    for m in re.finditer(r"WHSV\s*(?:[=:]|of)?\s*(\d+\.?\d*)", text, re.I):
         conditions["whsv"] = float(m.group(1)); break
 
-    # GHSV
-    for m in re.finditer(r"GHSV\s*[=:of\s]\s*([\d,]+\.?\d*)", text, re.I):
+    # GHSV (leading digit required: "GHSV," must not capture a bare comma)
+    for m in re.finditer(r"GHSV\s*(?:[=:]|of)?\s*(\d[\d,]*\.?\d*)", text, re.I):
         conditions["ghsv"] = float(m.group(1).replace(",", "")); break
 
     # Catalyst loading
@@ -259,8 +309,14 @@ def _table_to_units(df, doi_slug: str, table_idx: int) -> List[Dict]:
             numeric_str = re.match(r'^([0-9]+\.?[0-9]*)', val)
             if numeric_str:
                 num = float(numeric_str.group(1))
-                # Convert K → °C for temperature fields
-                if field == "temperature_c" and num > 200:
+                # Kelvin-labelled columns convert; °C columns are stored as-is.
+                # The >500 guard applies only to columns whose header carries no
+                # explicit °C mark (a unit-less value too high to be °C here).
+                if field == "temperature_k":
+                    num = round(num - 273.15, 1)
+                    field = "temperature_c"
+                elif (field == "temperature_c" and num > 500
+                        and not re.search(r"[°℃]", str(col))):
                     num = round(num - 273.15, 1)
                 unit[field] = num
             else:
