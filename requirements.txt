@@ -17,8 +17,12 @@ pandas>=2.0
 numpy>=1.24
 matplotlib>=3.7
 
-# Figure track (bar reader is numpy+Pillow; no OpenCV needed yet)
+# Figure track: bar + line/scatter readers are numpy+Pillow+SciPy; tick-label
+# OCR needs pytesseract AND the tesseract binary on PATH
+# (brew install tesseract / apt install tesseract-ocr)
 pillow>=10.0
+scipy>=1.10
+pytesseract>=0.3.10
 
 # Reference-page text extraction (provenance resolver)
 pdfplumber>=0.11

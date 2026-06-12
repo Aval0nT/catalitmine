@@ -212,13 +212,44 @@ class VisionChartExtractor:
             confidence=obj.get("confidence"), notes=obj.get("notes"))
 
 
+class CVLineExtractor:
+    """Deterministic line/scatter backend (line_reader.py): OCR-calibrated
+    axes + colour-clustered series. No model, no API."""
+    name = "cv-line"
+    model = None
+
+    def extract(self, image_path: Path) -> ChartExtraction:
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import line_reader as lr
+        try:
+            res = lr.read_image(image_path)
+        except Exception as e:
+            return ChartExtraction(image=image_path.name, backend=self.name,
+                                   error=f"reader: {e}")
+        panels = []
+        for p in res.get("panels", []):
+            series = [Series(s["name"], s["points"]) for s in p["series"]]
+            panels.append(Panel(panel=p.get("panel"),
+                                chart_type=p.get("chart_type"),
+                                x_axis=Axis(), y_axis=Axis(), series=series))
+        notes = "; ".join(filter(None, (q.get("notes")
+                                        for q in res.get("panels", [])))) or None
+        return ChartExtraction(
+            image=image_path.name, backend=self.name,
+            panels=panels, confidence=res.get("confidence"),
+            notes=notes, error=res.get("error"))
+
+
 # Placeholder for the reproducible backend built on feat/lineformer-standalone:
 # class LineFormerChartExtractor:  name = "lineformer";  def extract(...): ...
 
 def get_backend(name: str) -> ChartExtractor:
     if name == "vision":
         return VisionChartExtractor()
-    raise SystemExit(f"unknown backend '{name}' (available: vision; "
+    if name in ("cv", "cv-line"):
+        return CVLineExtractor()
+    raise SystemExit(f"unknown backend '{name}' (available: vision, cv-line; "
                      "lineformer is on the feat/lineformer-standalone branch)")
 
 

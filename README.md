@@ -33,8 +33,12 @@ designed to generalize to other catalysis reactions.
   CV reader digitises stacked and grouped **bar charts** with no model (validated
   to ≤0.5 % on tall segments, ±2–4 % on small ones, against printed values).
   Across the corpus: **48 / 51 papers carry activity figures** (~150 line/scatter,
-  ~43 bar). A line/scatter CV reader (markers + OCR-calibrated axes) is next, to
-  make figure extraction fully model-free.
+  ~43 bar). A deterministic line/scatter reader (colour-clustered series +
+  Tesseract-calibrated axes) covers the coloured majority: 109/148 figures yield
+  series data (~16,000 points), 56 % of panels carry at least one OCR-calibrated
+  axis, and uncalibrated panels are flagged in pixel units — never guessed. A
+  side-by-side verification page re-plots every extraction next to the original
+  for human sign-off.
 
 ---
 
@@ -173,7 +177,8 @@ topics/*/pdfs/<doi>.pdf  (+ <doi>_SI.pdf)
 | `scripts/extraction/extract_figures.py` | **Figure track** — Docling figure crops + captions |
 | `scripts/extraction/scope_figures.py` | **Figure track** — caption-based corpus figure inventory (no API) |
 | `scripts/extraction/bar_reader.py` | **Figure track** — deterministic CV reader for bar charts (no model) |
-| `scripts/extraction/chart_extractor.py` | **Figure track** — pluggable line/scatter reader (vision backend; CV/LineFormer planned) |
+| `scripts/extraction/line_reader.py` | **Figure track** — deterministic line/scatter reader: OCR-calibrated axes, legend OCR, verification HTML (no model) |
+| `scripts/extraction/chart_extractor.py` | **Figure track** — pluggable backend interface (vision + cv-line; LineFormer planned) |
 | `scripts/analysis/build_structure_activity.py` | **Figure track** — chart points → structure–activity dataset |
 | `scripts/extraction/extract_docling_v2.py` | **Evidence track** — section-aware prose extraction |
 | `scripts/analysis/resolve_refs_openalex.py` | In-text citation → primary DOI resolver (provenance) |
@@ -306,14 +311,15 @@ Strategic detail: [notes/project_plan_v1.md](notes/project_plan_v1.md).
 
 ## Roadmap
 
-- **Line/scatter CV reader** (next): a model-free reader for line and scatter
-  plots — coloured-marker detection (OpenCV) with OCR-calibrated axes
-  (Tesseract) — so figure digitisation becomes fully deterministic and API-free,
-  matching the bar reader. A standalone, MMDetection-free LineFormer backend is
-  parked on the `feat/lineformer-standalone` branch as a reproducible fallback
-  for dense/crossing curves. Full design — backends, shared axis calibration, and
-  the route-B plan for product-distribution and time-on-stream curves — is in
-  [notes/figure_reader_design.md](notes/figure_reader_design.md).
+- **Line/scatter reader hardening**: the deterministic reader
+  (`line_reader.py`, numpy + Pillow + SciPy + Tesseract) handles the coloured
+  majority of activity figures; next are grayscale marker-shape series
+  (filled/open circles — ~20 % of the corpus), per-panel axis-title OCR, and
+  raising the fully-calibrated rate. A standalone, MMDetection-free LineFormer
+  backend is parked on the `feat/lineformer-standalone` branch as a fallback
+  for dense/crossing curves. Full design — backends, shared axis calibration,
+  and the route-B plan for product-distribution and time-on-stream curves — is
+  in [notes/figure_reader_design.md](notes/figure_reader_design.md).
 - **Phase 4**: feature matrix → XGBoost + SHAP for design rules;
   Gaussian-process regression for virtual screening of under-explored
   catalyst combinations.

@@ -62,7 +62,7 @@ so adding a reader only means producing pixel-space traces.
 | Caption typing (`scope_figures.py`) | ✅ done, free | matches expert labels; gates out characterization |
 | Bar reader (`bar_reader.py`) | ✅ done, deterministic | stacked + grouped; validated ≤0.5 % (tall segments), ±2–4 % (small). Geometry is accurate; colour→catalyst naming is the fragile part |
 | Vision backend (`chart_extractor.py`) | ✅ works | reads line/scatter points where needed; consumes API credit |
-| Line/scatter CV reader | ⏳ next | see Roadmap 1 |
+| Line/scatter reader (`line_reader.py`) | ✅ v1, deterministic | numpy+Pillow+SciPy+Tesseract: panel split, OCR-calibrated axes (dark-masked per-tick crops, major-tick filter, stub-dash hygiene, validated linear fits), hue-merged colour series, legend OCR, marker/line point extraction. 109/148 scope figures yield series (~16k pts); 56 % of panels have ≥1 calibrated axis, 22 fully calibrated; non-charts refused. Verification HTML re-plots each extraction beside the original (`line_reader.py html`). Known v1 limits: grayscale marker plots (~20 % of scope), black series next to coloured ones, multi-axis panels |
 
 ---
 
