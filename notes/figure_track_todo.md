@@ -36,11 +36,16 @@ geometry models — it stays OCR + human clicks regardless of route.
 
 ## NOW — in flight
 
-- [ ] **HUMAN VERDICT on the probe** *(owner: Yuang)* — open
-      `outputs/reports/lineformer_probe_compare.html` (30 figures, 3-way:
-      original | LineFormer traces | CV reader). Claude's pre-read of the
-      evidence: traces are the real deal (see DONE + findings); decide
-      whether to greenlight the HF standalone port.
+- [ ] **LineFormer → HF standalone port** *(owner: Claude; GREENLIT by
+      Yuang 2026-06-12 after reviewing the 3-way page: "traces 非常准确";
+      noted weakness on very light colours — tune via input contrast
+      preprocessing later, tracked below)*. Phase 1: checkpoint key census
+      (mmdet state_dict vs HF Mask2FormerForUniversalSegmentation) — decides
+      mechanical-mapping vs detective-work scope. Parity standard: the 30
+      Modal probe outputs.
+- [ ] light-colour trace dropout — try contrast/CLAHE preprocessing before
+      inference once the port runs locally (user observation from the probe
+      review).
 - [~] ~~Three quick fixes to line_reader~~ *(deprioritized 2026-06-12: the
       route moved to LineFormer-first, so standalone CV-reader fixes lose
       value; y-flip folded into the fusion display above, junk-name filter
