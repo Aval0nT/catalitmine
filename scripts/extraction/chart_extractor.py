@@ -1,11 +1,18 @@
 """
 chart_extractor.py — pluggable chart→data extraction (Branch A).
 
-Defines a `ChartExtractor` interface + typed result objects, with a Claude-vision
-backend that works today (no GPU). A second backend — a standalone, MMDetection-free
-LineFormer in pure PyTorch — is being built on the `feat/lineformer-standalone`
-branch and will plug in behind the same interface for a reproducible / self-hostable
-path. The pipeline owns the interface; backends are swappable.
+Defines a `ChartExtractor` interface + typed result objects. Backends:
+  vision      Claude reads the chart (axis values + legend names included)
+  cv-line     deterministic colour-clustered CV reader (line_reader.py)
+  lineformer  HF-ported LineFormer (Mask2Former line-instance segmentation,
+              scripts/extraction/lineformer_port/) — geometry only, emits
+              pixel-space line traces; coordinate parity vs the original
+              mmdet stack on all 30 probe images: 125/129 traces
+              bit-identical, worst mean |Δy| 0.45 px (instance ORDER is
+              excluded from the contract — upstream's is GPU
+              implementation-defined). Report:
+              figures/lineformer_probe_results/hf_coord_parity.json
+The pipeline owns the interface; backends are swappable.
 
 CLI (batch over a folder of figure images):
   python3 scripts/extraction/chart_extractor.py --dir figures/charts_test
@@ -21,11 +28,17 @@ import json
 import mimetypes
 import os
 import re
+import sys
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Optional, Protocol
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def _ensure_on_path(p: Path) -> None:
+    if str(p) not in sys.path:
+        sys.path.insert(0, str(p))
 
 
 # ── env (clears host-injected proxy/bearer vars so the user's key hits the API) ─
@@ -214,13 +227,17 @@ class VisionChartExtractor:
 
 class CVLineExtractor:
     """Deterministic line/scatter backend (line_reader.py): OCR-calibrated
-    axes + colour-clustered series. No model, no API."""
+    axes + colour-clustered series. No model, no API.
+    Writes .cvchart.json: distinct from the vision stream (.chart.json,
+    value-space, consumed by build_structure_activity.py) AND from
+    line_reader's own batch output (.cvline.json, whose richer schema the
+    line_reader html command expects — this envelope would crash it)."""
     name = "cv-line"
     model = None
+    out_suffix = ".cvchart.json"
 
     def extract(self, image_path: Path) -> ChartExtraction:
-        import sys
-        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        _ensure_on_path(Path(__file__).resolve().parent)
         import line_reader as lr
         try:
             res = lr.read_image(image_path)
@@ -241,16 +258,79 @@ class CVLineExtractor:
             notes=notes, error=res.get("error"))
 
 
-# Placeholder for the reproducible backend built on feat/lineformer-standalone:
-# class LineFormerChartExtractor:  name = "lineformer";  def extract(...): ...
+class LineFormerChartExtractor:
+    """LineFormer (ICDAR 2023) ported to HF transformers — line-instance
+    segmentation, colour-independent (grayscale/black/crossing traces).
+    Geometry only: series are pixel-space traces (y grows downward); axis
+    calibration and legend names belong to the semantic layer / human gate.
+    Writes .lfline.json so pixel-space output never enters the value-space
+    .chart.json stream that build_structure_activity.py consumes."""
+    name = "lineformer"
+    model = "lineformer-hf (mask2former-swin-t, iter_3000)"
+    out_suffix = ".lfline.json"
 
-def get_backend(name: str) -> ChartExtractor:
+    def __init__(self, model_dir: Optional[Path] = None, device: str = "cpu",
+                 score_thr: float = 0.3):
+        self.model_dir = model_dir or ROOT / "models" / "lineformer_hf"
+        self.device = device
+        self.score_thr = score_thr
+        self._model = None
+
+    def _model_lazy(self):
+        if self._model is None:
+            if not Path(self.model_dir).exists():
+                raise SystemExit(
+                    f"{self.model_dir} missing — run scripts/extraction/"
+                    "lineformer_port/convert_lineformer_to_hf.py first")
+            _ensure_on_path(Path(__file__).resolve().parent / "lineformer_port")
+            from lineformer_hf_infer import load_model
+            self._model = load_model(self.model_dir, self.device)
+        return self._model
+
+    def extract(self, image_path: Path) -> ChartExtraction:
+        _ensure_on_path(Path(__file__).resolve().parent / "lineformer_port")
+        import cv2
+        from line_postproc import masks_to_dataseries
+        from lineformer_hf_infer import get_instance_masks
+
+        img = cv2.imread(str(image_path))
+        if img is None:
+            return ChartExtraction(image=image_path.name, backend=self.name,
+                                   model=self.model, error="unreadable image")
+        # load outside the per-image guard: a broken checkpoint should abort
+        # the batch loudly, not be retried and logged as 30 'inference' errors
+        model = self._model_lazy()
+        try:
+            masks, scores = get_instance_masks(
+                model, img, score_thr=self.score_thr, device=self.device)
+        except Exception as e:
+            return ChartExtraction(image=image_path.name, backend=self.name,
+                                   model=self.model, error=f"inference: {e}")
+        lines = masks_to_dataseries(masks)
+        series = [Series(name=f"line_{i + 1}", points=pts)
+                  for i, pts in enumerate(lines)]
+        min_score = min((float(s) for s in scores), default=None)
+        confidence = (None if min_score is None
+                      else "high" if min_score >= 0.7
+                      else "medium" if min_score >= 0.5 else "low")
+        notes = ("pixel-space traces (y down), uncalibrated; instance scores: "
+                 + ", ".join(f"{float(s):.2f}" for s in scores)) if len(series) else \
+                "no line instances above threshold"
+        return ChartExtraction(
+            image=image_path.name, backend=self.name, model=self.model,
+            panels=[Panel(chart_type="line", series=series)],
+            confidence=confidence, notes=notes)
+
+
+def get_backend(name: str, **kwargs) -> ChartExtractor:
     if name == "vision":
-        return VisionChartExtractor()
+        return VisionChartExtractor(**kwargs)
     if name in ("cv", "cv-line"):
-        return CVLineExtractor()
-    raise SystemExit(f"unknown backend '{name}' (available: vision, cv-line; "
-                     "lineformer is on the feat/lineformer-standalone branch)")
+        return CVLineExtractor(**kwargs)
+    if name == "lineformer":
+        return LineFormerChartExtractor(**kwargs)
+    raise SystemExit(f"unknown backend '{name}' (available: vision, cv-line, "
+                     "lineformer)")
 
 
 # ── batch runner ────────────────────────────────────────────────────────────
@@ -262,7 +342,8 @@ def batch(extractor: ChartExtractor, images: list[Path], out_dir: Path) -> list[
         if not img.exists():
             print(f"  ✗ {img.name}: not found"); continue
         r = extractor.extract(img)
-        (out_dir / f"{img.stem}.chart.json").write_text(
+        suffix = getattr(extractor, "out_suffix", ".chart.json")
+        (out_dir / f"{img.stem}{suffix}").write_text(
             json.dumps(r.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
         if r.error:
             print(f"  ✗ {img.name}: {r.error}")
@@ -278,7 +359,8 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="Chart→data extraction (pluggable backends)")
     ap.add_argument("--image", help="single image")
     ap.add_argument("--dir", help="folder of images (.png/.jpg/.jpeg)")
-    ap.add_argument("--backend", default="vision", help="vision (default)")
+    ap.add_argument("--backend", default="vision",
+                    help="vision (default) | cv-line | lineformer")
     ap.add_argument("--out", default=str(ROOT / "outputs" / "charts"))
     ap.add_argument("--min-size", type=int, default=120,
                     help="skip images whose width or height < this (logos/fragments)")

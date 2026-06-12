@@ -61,7 +61,8 @@ scripts/
 │   ├── scope_figures.py           ← Figure track: caption-based type inventory (no API)
 │   ├── bar_reader.py              ← Figure track: deterministic CV bar reader (no model)
 │   ├── line_reader.py             ← Figure track: deterministic line/scatter reader + verification HTML (no model)
-│   ├── chart_extractor.py         ← Figure track: pluggable backends (vision, cv-line)
+│   ├── chart_extractor.py         ← Figure track: pluggable backends (vision, cv-line, lineformer)
+│   ├── lineformer_port/           ← LineFormer→HF port: converter, mmdet-equivalent inference, parity checks
 │   ├── extract_highvalue.py       ← Figure track: vision extraction on a caption-selected subset
 │   ├── extract_docling_v2.py      ← Evidence track: section-aware prose extraction (Claude)
 │   ├── classify_figures.py        ← (superseded by scope_figures.py)

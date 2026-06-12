@@ -68,11 +68,31 @@ geometry models — it stays OCR + human clicks regardless of route.
       GPU-vs-CPU float noise amplified by 9 rounds of hard-thresholded masked
       attention, not a mapping bug; panel crops (the actual cascade input)
       sit at the top of the distribution.
-      Phase 3 (next session): port line_utils post-processing (pure
-      scipy/skimage; reference now cloned at third_party/LineFormer) on top of
-      lineformer_port/lineformer_hf_infer.py (mmdet-equivalent pre/post
-      processing, mask+score contract already matches line_utils input) and
-      register as a chart_extractor backend.
+      Phase 3 DONE (2026-06-12): post-processing reimplemented
+      (lineformer_port/line_postproc.py — written from the algorithm, not
+      translated, upstream has NO license; quirks deliberately preserved:
+      multi-run columns skipped, (first+last)//2 centers, 10-px comb with
+      exclusive end, int-truncating per-x linear densify; needs only
+      numpy/scipy — skeletonize/bresenham are on the post_proc=True path the
+      probe never used). END-TO-END COORDINATE PARITY vs all 30 goldens
+      (parity_coords.py → hf_coord_parity.json): 125/129 lines BIT-IDENTICAL,
+      4 lines mae 0.04–0.45 px, overlap 1.0 on every pair — the Phase 2
+      mask-level divergence lives entirely in multi-run columns that the
+      keypoint sampler skips on both sides, so the post-processing quotients
+      out the near-tie noise. Registered as chart_extractor backend
+      "lineformer" (writes .lfline.json; pixel-space output stays out of the
+      value-space .chart.json stream; cv-line CLI path likewise isolated to
+      .cvchart.json). Adversarial review (17-agent workflow): 1 major
+      confirmed & fixed — instance ORDER diverged from upstream (whose
+      topk(sorted=False) order is GPU implementation-defined → order is now
+      deterministic descending-cls-score and explicitly excluded from the
+      parity contract; consumers must not attach identity to position) —
+      plus 9 minors fixed (empty-golden-line handling in both parity
+      metrics, float-x crash, NaN guards, model-load error path, sys.path
+      hygiene, README/STRUCTURE drift); 4 findings refuted on verification.
+      LineFormer now runs locally on CPU: mmcv/mmdet/Modal no longer needed
+      for inference. Remaining wiring (queued in NEXT): panel-crop routing
+      before the model, axis fusion / human-gate display for .lfline.json.
 - [ ] light-colour trace dropout — try contrast/CLAHE preprocessing before
       inference once the port runs locally (user observation from the probe
       review).
@@ -222,6 +242,23 @@ coverage on confident regions (all passed; see NOW). Implication for the
 cascade: feed LineFormer panel CROPS, not full composites — fulls lose
 ≈0.3 coverage to downscaling at 512 px while their own crops score 0.85–1.00.
 
+**2026-06-12 — LineFormer licensing / release facts** (user asked whether the
+port can become "our own fork"). github.com/TheJaeLal/LineFormer has NO
+LICENSE file → default all-rights-reserved; the README invites use + citation
+but grants nothing formally (the vendored mmdetection/ subtree is Apache-2.0,
+OpenMMLab's). Weights: authors distribute via Google Drive (no license);
+the HF mirror tdsone/lineformer is tagged MIT by a third party who cannot
+grant it — though the authors' own README links to that wrapper approvingly
+(good-faith signal, not a license). Our position: convert_lineformer_to_hf.py
++ lineformer_hf_infer.py are original work; line_postproc.py reimplements the
+published algorithm (algorithms are not copyrightable; expression is — ours).
+After Phase 3 the runtime depends on zero upstream code. Release options,
+clean → cleanest: (a) own repo with conversion SCRIPTS only (user fetches
+weights from the authors' channel, converts locally) — needs nobody's
+permission; (b) same + converted weights on HF Hub — write the authors first;
+(c) a literal GitHub fork — wrong vehicle: inherits the unlicensed status AND
+the dead mmdet stack. Cite the ICDAR 2023 paper in all cases.
+
 **2026-06-12 — cost model.** This route burns free GPU-hours and human gate
 time, NOT API tokens. Optional vision-semantic pass ≈ $2–5 total. Dev
 iteration (agent fleets) is the actual token cost driver.
@@ -230,8 +267,12 @@ iteration (agent fleets) is the actual token cost driver.
 
 ## Open decisions
 
-- [ ] After probe: LineFormer as Colab-notebook official path vs standalone
-      rewrite vs drop (→ MarkerFormer-first)?
+- [ ] ~~After probe: LineFormer as Colab-notebook official path vs standalone
+      rewrite vs drop?~~ RESOLVED 2026-06-12: standalone HF port, done
+      (Phases 1–3). New decision: PUBLIC RELEASE vehicle — own repo with
+      conversion scripts only (zero-permission), or + converted weights on
+      HF Hub (email the LineFormer authors first; see licensing facts in
+      the findings log). A GitHub fork is the wrong vehicle either way.
 - [ ] Vision-semantic pass: top up ~$5 API credit, or stay zero-cost with
       manual calibration UI only?
 - [ ] Gold-set size & acceptance bar for the first structure–activity

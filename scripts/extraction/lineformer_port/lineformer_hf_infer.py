@@ -16,6 +16,12 @@ did around the network in the Modal probe (LineFormer test pipeline, mmdet
 
 Returns boolean instance masks at original resolution + scores — the exact
 input contract of LineFormer's line_utils keypoint extraction (Phase 3).
+
+Instance ORDER is not part of the parity contract: upstream selects queries
+via topk(..., sorted=False) whose order is implementation-defined (the Modal
+goldens came from a CUDA kernel). We emit a deterministic order instead —
+descending classification score, which is what upstream's CPU path happens
+to produce. Consumers must not attach identity to position.
 """
 from __future__ import annotations
 
@@ -72,15 +78,13 @@ def get_instance_masks(
         mask_logits, size=(h0, w0), mode="bilinear", align_corners=False
     )[0]
 
-    scores = F.softmax(cls_logits, dim=-1)[:, :-1].flatten()  # single 'line' class
+    assert cls_logits.shape[-1] == 2, "port assumes the single 'line' class"
+    cls_scores = F.softmax(cls_logits, dim=-1)[:, :-1].flatten()
     binary = mask_logits > 0
     denom = binary.flatten(1).sum(1).float() + 1e-6
     mask_scores = (mask_logits.sigmoid() * binary).flatten(1).sum(1) / denom
-    det_scores = scores * mask_scores
+    det_scores = cls_scores * mask_scores
 
-    keep = det_scores > score_thr
-    order = torch.argsort(det_scores[keep], descending=True)
-    return (
-        binary[keep][order].numpy(),
-        det_scores[keep][order].numpy(),
-    )
+    kept = torch.nonzero(det_scores > score_thr).flatten()
+    kept = kept[torch.argsort(cls_scores[kept], descending=True, stable=True)]
+    return binary[kept].numpy(), det_scores[kept].numpy()

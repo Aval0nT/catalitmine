@@ -45,9 +45,8 @@ def point_covered(mask: np.ndarray, x: int, y: int) -> bool:
 
 
 def line_coverage(mask: np.ndarray, line: list[dict]) -> float:
-    if not line:
-        return 1.0
-    hits = sum(point_covered(mask, pt["x"], pt["y"]) for pt in line)
+    # callers must filter out empty lines (a 0-point line covers vacuously)
+    hits = sum(point_covered(mask, int(pt["x"]), int(pt["y"])) for pt in line)
     return hits / len(line)
 
 
@@ -60,13 +59,17 @@ def evaluate(img_name: str, model, device: str) -> dict | None:
     img = cv2.imread(str(img_path))
     masks, scores = get_instance_masks(model, img, score_thr=0.3, device=device)
 
+    # empty golden lines (degenerate masks upstream) carry no points to cover —
+    # they stay in n_gold for the count check but not in coverage stats
+    nonempty = [ln for ln in gold if ln]
+
     union = masks.any(axis=0) if len(masks) else np.zeros(img.shape[:2], bool)
-    union_cov = [line_coverage(union, ln) for ln in gold]
+    union_cov = [line_coverage(union, ln) for ln in nonempty]
 
     # greedy 1-1: best (gold, mask) pairs first, each side used once
     pairs = sorted(
-        ((line_coverage(masks[m], gold[g]), g, m)
-         for g in range(len(gold)) for m in range(len(masks))),
+        ((line_coverage(masks[m], nonempty[g]), g, m)
+         for g in range(len(nonempty)) for m in range(len(masks))),
         reverse=True,
     )
     matched_cov, used_g, used_m = {}, set(), set()
@@ -76,7 +79,7 @@ def evaluate(img_name: str, model, device: str) -> dict | None:
         matched_cov[g] = cov
         used_g.add(g)
         used_m.add(m)
-    matched = [matched_cov.get(g, 0.0) for g in range(len(gold))]
+    matched = [matched_cov.get(g, 0.0) for g in range(len(nonempty))]
 
     return {
         "image": img_name,

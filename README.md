@@ -180,7 +180,7 @@ topics/*/pdfs/<doi>.pdf  (+ <doi>_SI.pdf)
 | `scripts/extraction/scope_figures.py` | **Figure track** — caption-based corpus figure inventory (no API) |
 | `scripts/extraction/bar_reader.py` | **Figure track** — deterministic CV reader for bar charts (no model) |
 | `scripts/extraction/line_reader.py` | **Figure track** — deterministic line/scatter reader: OCR-calibrated axes, legend OCR, verification HTML (no model) |
-| `scripts/extraction/chart_extractor.py` | **Figure track** — pluggable backend interface (vision + cv-line; LineFormer planned) |
+| `scripts/extraction/chart_extractor.py` | **Figure track** — pluggable backend interface (vision, cv-line, lineformer) |
 | `scripts/analysis/build_structure_activity.py` | **Figure track** — chart points → structure–activity dataset |
 | `scripts/extraction/extract_docling_v2.py` | **Evidence track** — section-aware prose extraction |
 | `scripts/analysis/resolve_refs_openalex.py` | In-text citation → primary DOI resolver (provenance) |
@@ -323,15 +323,16 @@ Strategic detail: [notes/project_plan_v1.md](notes/project_plan_v1.md).
   log: [notes/figure_track_todo.md](notes/figure_track_todo.md)): figures
   route by type — coloured line/scatter to the deterministic CV reader, bar
   panels to the validated bar reader, grayscale/black/crossing-curve figures
-  to a LineFormer-on-Colab probe (free GPU; instance segmentation is
-  colour-independent, exactly where colour-based CV is blind) — and every
-  extraction passes the human verification page (original vs re-plot;
-  click-to-calibrate UI planned) before entering the database. For a dataset,
-  precision of accepted data is what matters; automation only sets the human
-  cost per figure. Under evaluation: a small marker-detection model trained
-  on synthetic journal-style scatter plots (the open Benetech-competition
-  recipe); the MMDetection-free LineFormer rewrite stays parked on
-  `feat/lineformer-standalone` pending the probe. Design rationale:
+  to LineFormer (instance segmentation is colour-independent, exactly where
+  colour-based CV is blind; ported from MMDetection to plain HF transformers,
+  runs locally on CPU as the `lineformer` backend of chart_extractor.py,
+  coordinate parity verified against the original stack on the 30-image
+  probe) — and every extraction passes the human verification page (original
+  vs re-plot; click-to-calibrate UI planned) before entering the database.
+  For a dataset, precision of accepted data is what matters; automation only
+  sets the human cost per figure. Under evaluation: a small marker-detection
+  model trained on synthetic journal-style scatter plots (the open
+  Benetech-competition recipe). Design rationale:
   [notes/figure_reader_design.md](notes/figure_reader_design.md).
 - **Phase 4**: feature matrix → XGBoost + SHAP for design rules;
   Gaussian-process regression for virtual screening of under-explored
