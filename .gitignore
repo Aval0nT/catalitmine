@@ -99,3 +99,4 @@ settings.local.json
 notes/code_review_*.md
 third_party/
 .venv-modal/
+models/

@@ -39,10 +39,21 @@ geometry models — it stays OCR + human clicks regardless of route.
 - [ ] **LineFormer → HF standalone port** *(owner: Claude; GREENLIT by
       Yuang 2026-06-12 after reviewing the 3-way page: "traces 非常准确";
       noted weakness on very light colours — tune via input contrast
-      preprocessing later, tracked below)*. Phase 1: checkpoint key census
-      (mmdet state_dict vs HF Mask2FormerForUniversalSegmentation) — decides
-      mechanical-mapping vs detective-work scope. Parity standard: the 30
-      Modal probe outputs.
+      preprocessing later, tracked below)*.
+      Phase 1 DONE (2026-06-12): checkpoint at
+      models/lineformer_mmdet/iter_3000.pth (570 MB, gitignored; meta
+      CLASSES=('line',), mmdet 2.28.2, iter 3000). Census verdict:
+      MECHANICAL — pixel_decoder 117 = 117 keys EXACT vs HF
+      facebook/mask2former-swin-tiny-coco-instance (num_labels→1;
+      queries=100 ✓ hidden=256 ✓ Swin-T ✓); encoder 189/237 and decoder
+      164/206 count gaps are HF-side buffers (relative_position_index etc.).
+      torch 2.8 loads the ckpt with weights_only=False.
+      Phase 2 (next session): name-level mapping script → load into HF →
+      logits/mask parity against the 30 Modal probe outputs
+      (figures/lineformer_probe_results/output/*/lineformer/coordinates.json
+      is the golden reference).
+      Phase 3: port line_utils post-processing (pure scipy/skimage) and
+      register as a chart_extractor backend.
 - [ ] light-colour trace dropout — try contrast/CLAHE preprocessing before
       inference once the port runs locally (user observation from the probe
       review).
