@@ -111,6 +111,12 @@ geometry models — it stays OCR + human clicks regardless of route.
 - [x] 2026-06-12 — LineFormer probe kit: `figures/lineformer_probe.zip`
       (30 images) + batch Colab notebook (commit 4c9beb3).
 - [x] 2026-06-12 — landscape research (see Findings below).
+- [x] 2026-06-12 — **parse-once infrastructure** (commit dd6e858):
+      docling_cache + parse_pdfs --workers N; every PDF converts exactly once
+      (tables + figures + markdown from one parse), all extractors read the
+      cache. Re-ingest 0.06 s, v2 parse 0.3 s; 200-paper corpus ≈ 30 min once.
+      Equivalence proven (10/10 tables byte-identical, 69/69 DB rows);
+      adversarial review fixed 8 cache-lifecycle/concurrency defects.
 - [x] 2026-06-03 — bar_reader.py validated (≤0.5 % tall segments, ±2–4 %
       small); caption-based figure scoping (free, no API).
 
