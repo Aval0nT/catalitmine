@@ -16,17 +16,17 @@ designed to generalize to other catalysis reactions.
 - **Table-centric structured data, no LLM** — catalysis tables are
   catalyst-keyed property sheets; joining a paper's textural / acidity /
   composition / performance tables on the catalyst column reconstructs a dense
-  per-catalyst record, even when no single table holds everything. **547
+  per-catalyst record, even when no single table holds everything. **543
   records across 51 papers** so far — roughly fivefold more complete records
   than sentence-level prose extraction yielded from the same corpus.
 - **Citation-network provenance** — every record is traceable to its primary
   source via gold / silver / bronze tiers.
 - **Validated, not merely built** — the auto-extracted data reproduces
-  established kinetics: space velocity ↑ → conversion ↓ (*r* = −0.51, *n* = 50)
-  and temperature ↑ → conversion ↑ (*r* = +0.33, *n* = 71), alongside
-  BET area ↑ → Brønsted-acid density ↑ (*r* = +0.53). Recovering known physics
-  from automatically extracted numbers is direct evidence the data is sound.
-  **139 records already support condition–performance analysis.**
+  established kinetics: space velocity ↑ → conversion ↓ (*r* = −0.49, *n* = 55)
+  and temperature ↑ → conversion ↑ (*r* = +0.34, *n* = 102), alongside
+  BET area ↑ → Brønsted-acid density ↑ (*r* = +0.60, *n* = 35). Recovering
+  known physics from automatically extracted numbers is direct evidence the
+  data is sound. **141 records already support condition–performance analysis.**
 - **Figures → data, mostly API-free** — figures are typed from their *caption*
   (free, deterministic): characterization (XRD / NH₃-TPD / Raman / IR) is gated
   out and only activity & structure–activity panels go downstream. A pixel-level
@@ -72,17 +72,18 @@ single fixed schema. This pipeline addresses both, across complementary tracks:
 | 0 | Discovery (query → relevance-ranked screening shortlist) | ✅ Complete (v1) |
 | 1 | PDF → tables → per-catalyst records (LLM-free) + prose evidence | ✅ Complete |
 | 2 | Citation-network provenance (gold / silver / bronze) | ✅ Complete |
-| 3 | Corpus: 51 papers · 547 per-catalyst records · 7,491 prose evidence units | 🟡 Expanding (target ~200) |
+| 3 | Corpus: 51 papers · 543 per-catalyst records · 7,491 prose evidence units | 🟡 Expanding (target ~200) |
 | 4 | ML analysis: condition–performance → structure–activity (XGBoost/SHAP, GP screening) | 🟡 Data validated; modelling next |
 | 5 | Wet-lab validation loop | ⏳ Collaborator-dependent |
 
 This is an active, single-author research codebase. Interfaces may change.
 
-**Data usability — verified.** 547 per-catalyst records; 219 carry a
-performance metric, 164 a structural/textural/acidity property; 139 support
+**Data usability — verified.** 543 per-catalyst records; 225 carry a
+performance metric, 120 a structural/textural/acidity property; 141 support
 condition–performance analysis today. Structure–activity records (catalyst with
-both performance *and* property) currently number ~47 and are being grown via
-Supporting-Information tables, figure digitisation, and corpus expansion.
+both performance *and* property) currently number 59 — 38 of them fully numeric
+in the feature matrix — and are being grown via Supporting-Information tables,
+figure digitisation, and corpus expansion.
 
 **Figure inventory.** A caption-based scan of all 51 papers (no API) finds
 48 with activity figures — ~150 line/scatter and ~43 bar charts — versus the
@@ -99,21 +100,27 @@ beyond unit coalescing, established catalysis relationships emerge:
 
 | Relationship | *r* | *n* | Reading |
 |---|---|---|---|
-| GHSV ↑ → CO₂ conversion ↓ | −0.51 | 50 | shorter contact time lowers conversion |
-| Temperature ↑ → CO₂ conversion ↑ | +0.33 | 71 | kinetic temperature dependence |
-| BET area ↑ → Brønsted-acid density ↑ | +0.53 | 27 | more accessible framework acid sites |
-| CO₂ conversion ↑ → space-time yield ↑ | +0.54 | 20 | conversion drives productivity |
+| GHSV ↑ → CO₂ conversion ↓ | −0.49 | 55 | shorter contact time lowers conversion |
+| Temperature ↑ → CO₂ conversion ↑ | +0.34 | 102 | kinetic temperature dependence |
+| BET area ↑ → Brønsted-acid density ↑ | +0.60 | 35 | more accessible framework acid sites |
+| CO₂ conversion ↑ → space-time yield ↑ | +0.58 | 33 | conversion drives productivity |
+| Benzene fraction ↑ ↔ toluene fraction ↑ | +0.98 | 15 | co-produced aromatics move together — an internal-consistency check |
 
 That textbook kinetics fall out of automatically extracted numbers is the
-clearest evidence the extraction is faithful.
+clearest evidence the extraction is faithful. Early structure–activity signals
+are also emerging (BET area × aromatics fraction *r* = +0.80, *n* = 20;
+Lewis-acid density × aromatics fraction *r* = +0.86, *n* = 16) but stay out of
+the headline until the records grow enough to stratify them properly.
 
 **Methodological honesty.** Raw correlations across a pooled corpus can mislead:
 the dataset mixes two reactions (MTA and CO₂→aromatics), so conversions and
-selectivities are never merged across them, and a spurious
-pressure × conversion = −0.51 trend is a clear mixed-population (Simpson)
-artifact. Quantitative modelling therefore proceeds stratified by reaction and
-catalyst family — which is also why structure–activity records are being grown
-before any model is reported.
+selectivities are never merged across them, and a pressure × conversion trend
+(*r* = −0.35) is a mixed-population (Simpson) artifact — notably weakened from
+−0.58 by a unit- and label-correctness audit of the extraction code, which is
+itself evidence the artifact is data noise rather than chemistry. Quantitative
+modelling therefore proceeds stratified by reaction and catalyst family — which
+is also why structure–activity records are being grown before any model is
+reported.
 
 ---
 
@@ -261,7 +268,9 @@ python3 scripts/db/build_db.py
 }
 ```
 
-Full schema: [`schema/paper_record.schema.json`](schema/paper_record.schema.json).
+The maintainable header→attribute library that drives the table track:
+[`schema/table_attribute_keywords.json`](schema/table_attribute_keywords.json).
+Paper-screening template: [`schema/paper_record.schema.json`](schema/paper_record.schema.json).
 
 ---
 
