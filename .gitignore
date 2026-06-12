@@ -97,3 +97,5 @@ settings.local.json
 
 # Internal review notes (not for the public repo)
 notes/code_review_*.md
+third_party/
+.venv-modal/
