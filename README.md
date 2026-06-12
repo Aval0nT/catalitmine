@@ -34,11 +34,12 @@ designed to generalize to other catalysis reactions.
   to ≤0.5 % on tall segments, ±2–4 % on small ones, against printed values).
   Across the corpus: **48 / 51 papers carry activity figures** (~150 line/scatter,
   ~43 bar). A deterministic line/scatter reader (colour-clustered series +
-  Tesseract-calibrated axes) covers the coloured majority: 109/148 figures yield
-  series data (~16,000 points), 56 % of panels carry at least one OCR-calibrated
-  axis, and uncalibrated panels are flagged in pixel units — never guessed. A
-  side-by-side verification page re-plots every extraction next to the original
-  for human sign-off.
+  Tesseract-calibrated axes) extracts series traces from 109/148 scoped figures
+  (~16,000 points; uncalibrated panels are flagged in pixel units, never
+  guessed) — but end-to-end automatic accuracy on arbitrary journal styles is
+  not yet data-grade, so the design is **auto first-pass + human gate**: a
+  verification page re-plots every extraction beside the original, and only
+  human-accepted data enters the database.
 
 ---
 
@@ -311,15 +312,20 @@ Strategic detail: [notes/project_plan_v1.md](notes/project_plan_v1.md).
 
 ## Roadmap
 
-- **Line/scatter reader hardening**: the deterministic reader
-  (`line_reader.py`, numpy + Pillow + SciPy + Tesseract) handles the coloured
-  majority of activity figures; next are grayscale marker-shape series
-  (filled/open circles — ~20 % of the corpus), per-panel axis-title OCR, and
-  raising the fully-calibrated rate. A standalone, MMDetection-free LineFormer
-  backend is parked on the `feat/lineformer-standalone` branch as a fallback
-  for dense/crossing curves. Full design — backends, shared axis calibration,
-  and the route-B plan for product-distribution and time-on-stream curves — is
-  in [notes/figure_reader_design.md](notes/figure_reader_design.md).
+- **Figure track — auto first-pass + human gate** (live tracker & decision
+  log: [notes/figure_track_todo.md](notes/figure_track_todo.md)): figures
+  route by type — coloured line/scatter to the deterministic CV reader, bar
+  panels to the validated bar reader, grayscale/black/crossing-curve figures
+  to a LineFormer-on-Colab probe (free GPU; instance segmentation is
+  colour-independent, exactly where colour-based CV is blind) — and every
+  extraction passes the human verification page (original vs re-plot;
+  click-to-calibrate UI planned) before entering the database. For a dataset,
+  precision of accepted data is what matters; automation only sets the human
+  cost per figure. Under evaluation: a small marker-detection model trained
+  on synthetic journal-style scatter plots (the open Benetech-competition
+  recipe); the MMDetection-free LineFormer rewrite stays parked on
+  `feat/lineformer-standalone` pending the probe. Design rationale:
+  [notes/figure_reader_design.md](notes/figure_reader_design.md).
 - **Phase 4**: feature matrix → XGBoost + SHAP for design rules;
   Gaussian-process regression for virtual screening of under-explored
   catalyst combinations.

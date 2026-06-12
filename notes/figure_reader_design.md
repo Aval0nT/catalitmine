@@ -69,17 +69,18 @@ so adding a reader only means producing pixel-space traces.
 
 ## Roadmap
 
-### 1. Model-free line/scatter reader (next)
+### 1. Line/scatter reader — v1 shipped, human gate is the architecture
 
-A deterministic reader for line and scatter plots: coloured-marker detection
-(OpenCV) with OCR-calibrated axes (Tesseract), sharing the axis-calibration
-layer with the bar reader. The goal is to make figure digitisation **fully
-deterministic and API-free**, matching the bar reader.
-
-Known hard cases to handle or flag: overlapping and crossing curves, log axes,
-dashed/dotted lines, marker collision, and dense point clouds. Where the reader
-degrades, it lowers its confidence and defers to human verification rather than
-emitting unreliable points.
+The deterministic reader exists (`line_reader.py`: numpy + Pillow + SciPy +
+Tesseract — no OpenCV needed). v1 lesson, recorded in the
+[live tracker](figure_track_todo.md): component metrics overstate end-to-end
+usability — five stages multiply — and arbitrary journal styles are a long
+tail that pure heuristics will not close. The figure track therefore runs as
+**auto first-pass + human verification gate**: only human-accepted
+extractions enter the database, which makes the precision of accepted data a
+property of the process rather than of any model. Remaining v1 gaps:
+grayscale marker-shape series (~20 % of scope), in-plot coloured legend text,
+bar-vs-line panel routing, uncalibrated-y orientation.
 
 ### 2. Pure-PyTorch, MMDetection-free LineFormer backend (parked)
 
