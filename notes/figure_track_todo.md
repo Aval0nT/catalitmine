@@ -36,11 +36,17 @@ geometry models — it stays OCR + human clicks regardless of route.
 
 ## NOW — in flight
 
-- [ ] **LineFormer probe run** *(owner: Yuang, ~20 min)* — open
-      `notebooks/lineformer_probe_colab.ipynb` on Colab (T4), upload
-      `figures/lineformer_probe.zip` (30 images, 10 figures incl. the two
-      grayscale killers), download `lineformer_probe_results.zip` into
-      `figures/`. This decides the geometry-layer ceiling.
+- [ ] **LineFormer probe run — via MODAL** *(owner: Yuang, ~5 min of clicks)* —
+      Colab's door closed (py3.12/torch2.10: plextract pins py<3.11, mim
+      crashes on removed pkgutil.ImpImporter, no cp312 mmcv-full wheels).
+      The wrapper's own Modal backend pins the whole stack in a container
+      image. Steps: (1) sign up modal.com (free credits), (2)
+      `.venv-modal/bin/modal token new`, (3)
+      `.venv-modal/bin/python3 scripts/extraction/lineformer_modal_probe.py`.
+      First run builds the image server-side (~5-10 min, cached after).
+      Results → figures/lineformer_probe_results/. The Colab notebook stays
+      in notebooks/ as reference only. This decides the geometry-layer
+      ceiling.
 - [ ] **Fuse probe results** *(owner: Claude, after probe)* — LineFormer
       traces + existing calibration layer → 3-way verification HTML
       (original | LineFormer | CV reader); judged by eye. Includes the
