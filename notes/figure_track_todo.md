@@ -48,11 +48,30 @@ geometry models — it stays OCR + human clicks regardless of route.
       queries=100 ✓ hidden=256 ✓ Swin-T ✓); encoder 189/237 and decoder
       164/206 count gaps are HF-side buffers (relative_position_index etc.).
       torch 2.8 loads the ckpt with weights_only=False.
-      Phase 2 (next session): name-level mapping script → load into HF →
-      logits/mask parity against the 30 Modal probe outputs
-      (figures/lineformer_probe_results/output/*/lineformer/coordinates.json
-      is the golden reference).
-      Phase 3: port line_utils post-processing (pure scipy/skimage) and
+      Phase 2 DONE (2026-06-12): conversion + parity PASSED. Mapping script
+      scripts/extraction/lineformer_port/convert_lineformer_to_hf.py consumes
+      all 481 ckpt tensors → 565/566 HF keys (the one gap is the loss-time
+      buffer criterion.empty_weight, rebuilt from config); three real
+      transforms (Swin fused qkv split, PatchMerging unfold→group channel
+      permutation, decoder self-attn in_proj split), rest renames;
+      relative_position_index buffers in the ckpt equal HF's fresh ones
+      bit-for-bit (window conventions agree). Output: models/lineformer_hf/
+      (gitignored). Parity vs the 30 Modal goldens
+      (parity_probe.py → figures/lineformer_probe_results/hf_parity_report.json):
+      instance counts 30/30 EXACT incl. the four 0-line scatter rejections;
+      point coverage 1.00 on clean single panels (8 images ≥0.95), mean 0.80;
+      the low tail is confined to full composites (decorative arrows, 1-px
+      downscaled dense panels) and the marker-scatter dead zone, where the
+      golden-vs-HF distance histogram is bimodal (44 % at 0–1 px, 4 % at
+      1–3 px, 40 % >10 px on the worst dense composite) — whole segments
+      reassigned between near-tie queries, not a systematic shift. Read:
+      GPU-vs-CPU float noise amplified by 9 rounds of hard-thresholded masked
+      attention, not a mapping bug; panel crops (the actual cascade input)
+      sit at the top of the distribution.
+      Phase 3 (next session): port line_utils post-processing (pure
+      scipy/skimage; reference now cloned at third_party/LineFormer) on top of
+      lineformer_port/lineformer_hf_infer.py (mmdet-equivalent pre/post
+      processing, mask+score contract already matches line_utils input) and
       register as a chart_extractor backend.
 - [ ] light-colour trace dropout — try contrast/CLAHE preprocessing before
       inference once the port runs locally (user observation from the probe
@@ -191,6 +210,17 @@ Strategic read: the OPPORTUNITY is precisely that no open, journal-domain
 chart-extraction suite exists — synthetic-data + small-detector + human-gate
 benchmark is publishable infrastructure (Digital Discovery material) and
 fits the "builds ML infrastructure for chemistry data" narrative.
+
+**2026-06-12 — HF-port parity: what "equal" means for a Mask2Former.**
+Bit-identical outputs across stacks are unattainable by construction: the
+decoder re-thresholds (sigmoid < 0.5) intermediate masks for masked attention
+9 times, so ~1e-6 float differences (CUDA MSDA kernel vs torch grid_sample,
+GPU vs CPU convs) flip attention discretely wherever a mask pixel sits near
+the boundary — i.e. exactly at line crossings and 1-px features. The right
+acceptance test is therefore behavioral: instance counts, scores, and
+coverage on confident regions (all passed; see NOW). Implication for the
+cascade: feed LineFormer panel CROPS, not full composites — fulls lose
+≈0.3 coverage to downscaling at 512 px while their own crops score 0.85–1.00.
 
 **2026-06-12 — cost model.** This route burns free GPU-hours and human gate
 time, NOT API tokens. Optional vision-semantic pass ≈ $2–5 total. Dev
