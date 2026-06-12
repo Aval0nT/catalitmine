@@ -36,22 +36,11 @@ geometry models — it stays OCR + human clicks regardless of route.
 
 ## NOW — in flight
 
-- [ ] **LineFormer probe run — via MODAL** *(owner: Yuang, ~5 min of clicks)* —
-      Colab's door closed (py3.12/torch2.10: plextract pins py<3.11, mim
-      crashes on removed pkgutil.ImpImporter, no cp312 mmcv-full wheels).
-      The wrapper's own Modal backend pins the whole stack in a container
-      image. Steps: (1) sign up modal.com (free credits), (2)
-      `.venv-modal/bin/modal token new`, (3)
-      `.venv-modal/bin/python3 scripts/extraction/lineformer_modal_probe.py`.
-      First run builds the image server-side (~5-10 min, cached after).
-      Results → figures/lineformer_probe_results/. The Colab notebook stays
-      in notebooks/ as reference only. This decides the geometry-layer
-      ceiling.
-- [ ] **Fuse probe results** *(owner: Claude, after probe)* — LineFormer
-      traces + existing calibration layer → 3-way verification HTML
-      (original | LineFormer | CV reader); judged by eye. Includes the
-      pixel-y FLIP in the display layer (re-plots currently mirror trends —
-      applies to any pixel-trace source, LineFormer included).
+- [ ] **HUMAN VERDICT on the probe** *(owner: Yuang)* — open
+      `outputs/reports/lineformer_probe_compare.html` (30 figures, 3-way:
+      original | LineFormer traces | CV reader). Claude's pre-read of the
+      evidence: traces are the real deal (see DONE + findings); decide
+      whether to greenlight the HF standalone port.
 - [~] ~~Three quick fixes to line_reader~~ *(deprioritized 2026-06-12: the
       route moved to LineFormer-first, so standalone CV-reader fixes lose
       value; y-flip folded into the fusion display above, junk-name filter
@@ -124,6 +113,18 @@ geometry models — it stays OCR + human clicks regardless of route.
 - [x] 2026-06-12 — LineFormer probe kit: `figures/lineformer_probe.zip`
       (30 images) + batch Colab notebook (commit 4c9beb3).
 - [x] 2026-06-12 — landscape research (see Findings below).
+- [x] 2026-06-12 — **LineFormer probe EXECUTED via Modal** (runner commit
+      ed7496e + timeout/import self-heal patches): 30/30 images processed on
+      the pinned py3.10/torch1.13 container. Headline: the GRAYSCALE catcom
+      TOS figure — CV reader: 0 series — LineFormer traced ALL 6 series,
+      separating open vs filled black markers and following the crossing in
+      panel c. Dense multi-line 119912: 8-12 traces/panel. Marker-only
+      scatter (jcat.2015.01): 0 — confirmed dead zone (it is a LINE model)
+      → MarkerFormer case strengthened. The wrapper's own axis fusion
+      completed on only 7/30 (semantic layer stays ours / human gate).
+- [x] 2026-06-12 — 3-way comparison page (commit e992173):
+      outputs/reports/lineformer_probe_compare.html, incl. the pixel-y
+      orientation fix for CV re-plots.
 - [x] 2026-06-12 — **parse-once infrastructure** (commit dd6e858):
       docling_cache + parse_pdfs --workers N; every PDF converts exactly once
       (tables + figures + markdown from one parse), all extractors read the
