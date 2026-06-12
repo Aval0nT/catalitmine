@@ -37,17 +37,34 @@ os.environ["PATH"] = str(Path(sys.executable).parent) + os.pathsep + os.environ[
 
 
 def _patch_wrapper() -> None:
-    """Self-heal known wrapper/modal-client incompatibilities (idempotent).
+    """Self-heal known wrapper issues (idempotent).
 
-    modal >=1.5 removed the long-deprecated `modal.gpu` module; the wrapper
-    imports it but never uses it (gpu= is always passed as a string)."""
-    lf = WRAPPER / "src" / "plextract" / "modal" / "lineformer.py"
-    src = lf.read_text(encoding="utf-8")
-    fixed = src.replace("from modal import App, gpu, method",
-                        "from modal import App, method")
-    if fixed != src:
-        lf.write_text(fixed, encoding="utf-8")
-        print("patched wrapper: dropped unused `gpu` import (removed in modal 1.5)")
+    1. modal >=1.5 removed the long-deprecated `modal.gpu` module; the wrapper
+       imports it but never uses it (gpu= is always passed as a string).
+    2. Modal's default per-function timeout is 300 s — the orchestrating
+       run_pipeline (and the model classes) need more for a 30-image batch
+       with three cold container starts (observed: pipeline healthy, killed
+       at exactly 300 s)."""
+    fixes = [
+        ("modal/lineformer.py",
+         "from modal import App, gpu, method",
+         "from modal import App, method"),
+        ("modal/app.py",
+         '@modal_app.function(image=image, volumes={"/data": vol})',
+         '@modal_app.function(image=image, volumes={"/data": vol}, timeout=3600)'),
+        ("modal/lineformer.py",
+         '@app.cls(\n    gpu="any",\n    scaledown_window=240,\n    image=lineformer_image,',
+         '@app.cls(\n    gpu="any",\n    scaledown_window=240,\n    timeout=1800,\n    image=lineformer_image,'),
+        ("modal/trocr.py",
+         '@app.cls(\n    image=ocr_img,',
+         '@app.cls(\n    timeout=1800,\n    image=ocr_img,'),
+    ]
+    for rel, old, new in fixes:
+        f = WRAPPER / "src" / "plextract" / rel
+        src = f.read_text(encoding="utf-8")
+        if old in src:
+            f.write_text(src.replace(old, new), encoding="utf-8")
+            print(f"patched wrapper: {rel} ({new.splitlines()[-1].strip()[:50]}…)")
 
 
 def main() -> None:
