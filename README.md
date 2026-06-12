@@ -40,6 +40,20 @@ designed to generalize to other catalysis reactions.
   not yet data-grade, so the design is **auto first-pass + human gate**: a
   verification page re-plots every extraction beside the original, and only
   human-accepted data enters the database.
+- **LineFormer natively on Apple Silicon — no MMDetection, no CUDA, no cloud** —
+  the strongest published line-chart extractor
+  ([LineFormer](https://github.com/TheJaeLal/LineFormer), ICDAR 2023) ships
+  pinned to a frozen stack (mmcv-full 1.x, Python ≤3.10, CUDA containers) that
+  no longer builds on current Python or on macOS-arm64. We mapped its trained
+  Mask2Former checkpoint tensor-by-tensor onto Hugging Face `transformers`
+  ([scripts/extraction/lineformer_port/](scripts/extraction/lineformer_port/))
+  and reimplemented the mask→trace post-processing in plain numpy/scipy.
+  Equivalence is measured, not assumed: across a 30-figure probe set, **125 of
+  129 extracted line traces are bit-identical** to the original CUDA stack
+  (worst remaining deviation: 0.45 px mean). Inference runs on an M-series
+  MacBook at **~0.7 s per figure on CPU alone** (MPS works too, identical
+  output) — `torch` + `transformers` and go; it picks up grayscale, black,
+  and crossing curves exactly where colour-based CV is blind.
 
 ---
 
@@ -59,8 +73,10 @@ single fixed schema. This pipeline addresses both, across complementary tracks:
    ligature/OCR artifacts, and Supporting-Information PDFs).
 3. **Figure track** — figures are classified by caption keywords (free),
    keeping only activity / structure–activity panels; a deterministic CV reader
-   digitises bar charts (stacked & grouped) with no model, and a vision backend
-   reads line/scatter points where needed. Output feeds the structure–activity set.
+   digitises bar charts (stacked & grouped) with no model; line/scatter panels
+   go to the HF-ported LineFormer (colour-independent instance segmentation,
+   local CPU), with a vision backend available as fallback. Output feeds the
+   structure–activity set.
 4. **Evidence track** — section-aware prose extraction (Claude Haiku 4.5,
    prompt-only) captures claims, mechanisms, and conditions, each tagged with a
    **provenance tier**: *gold* (primary paper), *silver* (review with the
@@ -93,7 +109,9 @@ figure digitisation, and corpus expansion.
 **Figure inventory.** A caption-based scan of all 51 papers (no API) finds
 48 with activity figures — ~150 line/scatter and ~43 bar charts — versus the
 characterization figures (XRD/TPD/IR) that are correctly gated out. Bar charts
-already digitise deterministically; line/scatter digitisation is the next module.
+already digitise deterministically; line/scatter traces extract via the
+LineFormer port (see Highlights) — axis calibration and series naming stay
+with the human gate.
 
 ---
 
@@ -323,11 +341,13 @@ Strategic detail: [notes/project_plan_v1.md](notes/project_plan_v1.md).
   log: [notes/figure_track_todo.md](notes/figure_track_todo.md)): figures
   route by type — coloured line/scatter to the deterministic CV reader, bar
   panels to the validated bar reader, grayscale/black/crossing-curve figures
-  to LineFormer (instance segmentation is colour-independent, exactly where
+  to [LineFormer](https://github.com/TheJaeLal/LineFormer) (Lal et al., ICDAR
+  2023 — instance segmentation is colour-independent, exactly where
   colour-based CV is blind; ported from MMDetection to plain HF transformers,
-  runs locally on CPU as the `lineformer` backend of chart_extractor.py,
-  coordinate parity verified against the original stack on the 30-image
-  probe) — and every extraction passes the human verification page (original
+  runs locally on Apple-Silicon CPU as the `lineformer` backend of
+  chart_extractor.py, coordinate parity verified against the original stack
+  on the 30-image probe) — and every extraction passes the human verification
+  page (original
   vs re-plot; click-to-calibrate UI planned) before entering the database.
   For a dataset, precision of accepted data is what matters; automation only
   sets the human cost per figure. Under evaluation: a small marker-detection
