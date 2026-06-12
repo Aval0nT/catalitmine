@@ -36,8 +36,23 @@ sys.path.insert(0, str(WRAPPER / "src"))
 os.environ["PATH"] = str(Path(sys.executable).parent) + os.pathsep + os.environ["PATH"]
 
 
+def _patch_wrapper() -> None:
+    """Self-heal known wrapper/modal-client incompatibilities (idempotent).
+
+    modal >=1.5 removed the long-deprecated `modal.gpu` module; the wrapper
+    imports it but never uses it (gpu= is always passed as a string)."""
+    lf = WRAPPER / "src" / "plextract" / "modal" / "lineformer.py"
+    src = lf.read_text(encoding="utf-8")
+    fixed = src.replace("from modal import App, gpu, method",
+                        "from modal import App, method")
+    if fixed != src:
+        lf.write_text(fixed, encoding="utf-8")
+        print("patched wrapper: dropped unused `gpu` import (removed in modal 1.5)")
+
+
 def main() -> None:
     assert WRAPPER.exists(), f"wrapper repo missing — git clone tdsone/extract-line-chart-data into {WRAPPER}"
+    _patch_wrapper()
     pngs = sorted(PROBE.glob("*.png"))
     assert pngs, f"probe images missing under {PROBE}"
 
