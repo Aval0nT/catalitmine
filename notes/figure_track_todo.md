@@ -91,8 +91,9 @@ geometry models — it stays OCR + human clicks regardless of route.
       metrics, float-x crash, NaN guards, model-load error path, sys.path
       hygiene, README/STRUCTURE drift); 4 findings refuted on verification.
       LineFormer now runs locally on CPU: mmcv/mmdet/Modal no longer needed
-      for inference. Remaining wiring (queued in NEXT): panel-crop routing
-      before the model, axis fusion / human-gate display for .lfline.json.
+      for inference. Remaining wiring (queued in NEXT): caption-prior
+      panel-crop routing before the model, axis fusion / human-gate display
+      for .lfline.json.
 - [ ] light-colour trace dropout — try contrast/CLAHE preprocessing before
       inference once the port runs locally (user observation from the probe
       review).
@@ -104,13 +105,37 @@ geometry models — it stays OCR + human clicks regardless of route.
 
 ## NEXT — queued, order flexible
 
-- [ ] **Gold-set triage query** — from the DB: which figures, if digitized,
-      JOIN against existing property records into structure–activity records?
-      Target the valuable ~20–40 figures, not all 148.
+*Cross-cutting input (added 2026-06-13, user observation): CAPTIONS are a
+first-class signal, not just a type-guess source. Coverage measured: 472/974
+figure crops carry a non-empty Docling caption, 228 spell out the panel
+inventory ("(a) ..., (b) ..."). One caption typically names the catalysts
+(the triage JOIN key), the plotted quantities (axis semantics), the panel
+count/content (routing prior), and often reaction conditions (T, TOS). The
+three items below each consume it; the geometry models never see it.*
+
+- [ ] **Gold-set triage query** — CAPTION-DRIVEN: match catalyst names in
+      caption text against existing property records in the DB, and filter
+      panels by performance keywords (conversion/selectivity/yield/TOS) vs
+      characterization (SEM/XRD/NMR/TGA — skip). Which figures, if digitized,
+      JOIN into structure–activity records? Target the valuable ~20–40
+      figures, not all 148. Also produce a caption-coverage diagnostic
+      (502/974 crops have empty captions — partly real non-figures
+      [schemes, graphical abstracts], partly Docling capture misses;
+      quantify before trusting the filter as an exclusion gate).
+- [ ] **Panel-crop routing before LineFormer** — composites lose ~0.3
+      coverage at 512 px (Phase 2 data); split into panels first. Use the
+      caption's panel inventory as PRIOR + VALIDATION for the visual
+      splitter: caption says 2 panels but splitter finds 3 → flag for the
+      human gate; per-panel caption text routes each crop (line panel →
+      lineformer backend, bar panel → bar_reader, spectra/microscopy →
+      skip). Captions give count + content, never pixel boundaries — the
+      visual split stays, caption arbitrates.
 - [ ] **Click-to-calibrate UI** — upgrade the verification HTML: click two
       ticks + type two values per axis, JS recomputes all points from the
       stored pixel traces, edit series names, export corrected JSON.
       Prerequisite: keep `_box`/`_offset` (pixel transform) in saved JSON.
+      PRE-FILL from caption: candidate series/catalyst names, axis
+      quantities, conditions — the human confirms instead of typing.
       By-product: every corrected figure = ground truth for training/eval.
 - [ ] **Benetech 2nd-place test drive** — run the open Kaggle solution
       (rbiswasfc/benetech-mga) on our scatter panels: free starting point,
