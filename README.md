@@ -1,5 +1,19 @@
 # catalitmine — Catalysis Literature Mining
 
+<p align="center"><b>Papers in, catalyst data out — every number traceable to its source.</b></p>
+
+<p align="center">
+  <img alt="Python 3.9+" src="https://img.shields.io/badge/python-3.9%2B-3776AB?logo=python&logoColor=white">
+  <img alt="Corpus" src="https://img.shields.io/badge/corpus-51_papers_%C2%B7_726_records-6f42c1">
+  <img alt="Table track: LLM-free" src="https://img.shields.io/badge/table_track-LLM--free-2E8B57">
+  <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-97CA00">
+</p>
+<p align="center">
+  <a href="scripts/extraction/lineformer_port/"><img alt="LineFormer port" src="https://img.shields.io/badge/LineFormer_port-Apple_Silicon_%C2%B7_CPU_%3C1s%2Ffig-FF6F00?logo=apple&logoColor=white"></a>
+  <a href="https://github.com/TheJaeLal/LineFormer"><img alt="Based on LineFormer" src="https://img.shields.io/badge/based_on-LineFormer_(ICDAR_2023)-E36209"></a>
+  <img alt="Status" src="https://img.shields.io/badge/status-active_research-dfb317">
+</p>
+
 > A reproducible, **fine-tuning-free** pipeline that turns a research query into
 > a structured, provenance-tracked database of catalysts, reaction conditions,
 > and performance — end to end, automatically.
@@ -11,49 +25,55 @@ designed to generalize to other catalysis reactions.
 
 ## Highlights
 
-- **End-to-end automation** — research query → relevance-ranked literature
-  shortlist → table extraction → joined per-catalyst records → analysis.
-- **Table-centric structured data, no LLM** — catalysis tables are
-  catalyst-keyed property sheets; joining a paper's textural / acidity /
-  composition / performance tables on the catalyst column reconstructs a dense
-  per-catalyst record, even when no single table holds everything. **726
-  records across 51 papers** so far — roughly sixfold more complete records
-  than sentence-level prose extraction yielded from the same corpus.
-- **Citation-network provenance** — every record is traceable to its primary
-  source via gold / silver / bronze tiers.
-- **Validated, not merely built** — the auto-extracted data reproduces
-  established kinetics: space velocity ↑ → conversion ↓ (*r* = −0.43, *n* = 151)
-  and temperature ↑ → conversion ↑ (*r* = +0.41, *n* = 271), alongside
-  BET area ↑ → Brønsted-acid density ↑ (*r* = +0.60, *n* = 35). Recovering
-  known physics from automatically extracted numbers is direct evidence the
-  data is sound. **318 records already support condition–performance analysis.**
-- **Figures → data, mostly API-free** — figures are typed from their *caption*
-  (free, deterministic): characterization (XRD / NH₃-TPD / Raman / IR) is gated
-  out and only activity & structure–activity panels go downstream. A pixel-level
-  CV reader digitises stacked and grouped **bar charts** with no model (validated
-  to ≤0.5 % on tall segments, ±2–4 % on small ones, against printed values).
-  Across the corpus: **48 / 51 papers carry activity figures** (~150 line/scatter,
-  ~43 bar). A deterministic line/scatter reader (colour-clustered series +
-  Tesseract-calibrated axes) extracts series traces from 109/148 scoped figures
-  (~16,000 points; uncalibrated panels are flagged in pixel units, never
-  guessed) — but end-to-end automatic accuracy on arbitrary journal styles is
-  not yet data-grade, so the design is **auto first-pass + human gate**: a
-  verification page re-plots every extraction beside the original, and only
-  human-accepted data enters the database.
-- **LineFormer natively on Apple Silicon — no MMDetection, no CUDA, no cloud** —
-  the strongest published line-chart extractor
-  ([LineFormer](https://github.com/TheJaeLal/LineFormer), ICDAR 2023) ships
-  pinned to a frozen stack (mmcv-full 1.x, Python ≤3.10, CUDA containers) that
-  no longer builds on current Python or on macOS-arm64. We mapped its trained
-  Mask2Former checkpoint tensor-by-tensor onto Hugging Face `transformers`
-  ([scripts/extraction/lineformer_port/](scripts/extraction/lineformer_port/))
-  and reimplemented the mask→trace post-processing in plain numpy/scipy.
-  Equivalence is measured, not assumed: across a 30-figure probe set, **125 of
-  129 extracted line traces are bit-identical** to the original CUDA stack
-  (worst remaining deviation: 0.45 px mean). Inference runs on an M-series
-  MacBook at **~0.7 s per figure on CPU alone** (MPS works too, identical
-  output) — `torch` + `transformers` and go; it picks up grayscale, black,
-  and crossing curves exactly where colour-based CV is blind.
+- **End-to-end** — research query → ranked literature → tables → **726
+  per-catalyst records** from 51 papers → analysis.
+- **LLM-free where it counts** — the entire table track runs without a single
+  API call, and is roughly sixfold more complete than prose extraction.
+- **Provenance by construction** — every record traces to its primary source
+  (gold / silver / bronze tiers).
+- **Validated, not merely built** — textbook kinetics fall out of the
+  auto-extracted numbers ([Validation](#validation)).
+- **Figures → data, locally** — deterministic bar/line readers plus a
+  LineFormer port running on Apple-Silicon CPU at ~0.7 s/figure; a human
+  gate guards everything that enters the database.
+
+### In detail
+
+**Table-centric structured data, no LLM.** Catalysis tables are catalyst-keyed
+property sheets; joining a paper's textural / acidity / composition /
+performance tables on the catalyst column reconstructs a dense per-catalyst
+record even when no single table holds everything — 726 records across 51
+papers, roughly sixfold more complete than sentence-level prose extraction
+yielded from the same corpus. **318 records already support
+condition–performance analysis.**
+
+**Figures → data, mostly API-free.** Figures are typed from their *caption*
+(free, deterministic): characterization (XRD / NH₃-TPD / Raman / IR) is gated
+out and only activity & structure–activity panels go downstream — 48/51 papers
+carry activity figures (~150 line/scatter, ~43 bar). A pixel-level CV reader
+digitises stacked and grouped **bar charts** with no model (validated to
+≤0.5 % on tall segments, ±2–4 % on small ones); a colour-clustering
+line/scatter reader covers clean coloured panels (109/148 scoped figures,
+~16,000 points; uncalibrated panels are flagged in pixel units, never
+guessed). End-to-end automatic accuracy on arbitrary journal styles is not
+yet data-grade, so the design is **auto first-pass + human gate**: a
+verification page re-plots every extraction beside the original, and only
+human-accepted data enters the database.
+
+**LineFormer without MMDetection, CUDA, or cloud.** The strongest published
+line-chart extractor ([LineFormer](https://github.com/TheJaeLal/LineFormer),
+Lal et al., ICDAR 2023) ships pinned to a frozen stack (mmcv-full 1.x,
+Python ≤3.10, CUDA containers) that no longer builds on current Python or on
+macOS-arm64. We mapped its trained Mask2Former checkpoint tensor-by-tensor
+onto Hugging Face `transformers`
+([scripts/extraction/lineformer_port/](scripts/extraction/lineformer_port/))
+and reimplemented the mask→trace post-processing in plain numpy/scipy.
+Equivalence is measured, not assumed: across a 30-figure probe set, **125 of
+129 extracted line traces are bit-identical** to the original CUDA stack
+(worst remaining deviation: 0.45 px mean). Inference runs on an M-series
+MacBook at **~0.7 s per figure on CPU alone** (MPS verified, identical
+output) — and it reads grayscale, black, and crossing curves exactly where
+colour-based CV is blind.
 
 ---
 
