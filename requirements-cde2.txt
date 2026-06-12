@@ -1,0 +1,17 @@
+# Legacy CDE2 evidence-track extras (ChemDataExtractor2 entity enrichment).
+# Only needed for scripts/extraction/{enrich_chunks_cde,extract_records_cde}.py.
+# Install via:  bash setup_env.sh --with-cde2
+#
+# Pins matter here: torch>=2.6 changed torch.load to weights_only=True, which
+# breaks stanza's old model format used by CDE2; stanza>=1.9 has a Python-3.9
+# syntax bug in convert_hebrew_mixed.py.
+chemdataextractor2==2.4.0
+stanza<1.9
+torch<2.6
+transformers>=4.30.1
+dawg-python
+python-crfsuite
+yaspin
+deprecation
+appdirs
+nltk

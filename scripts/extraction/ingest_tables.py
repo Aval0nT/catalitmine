@@ -69,17 +69,59 @@ def find_si_pdfs(doi: str) -> list[Path]:
     return sorted(set(out))
 
 
+def ensure_schema(conn: sqlite3.Connection) -> None:
+    """Bootstrap the one table this script writes, so a fresh clone can run
+    the table track before build_db.py has ever been invoked."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS table_rows (
+            row_id            TEXT PRIMARY KEY,
+            source_review_doi TEXT,
+            primary_paper_doi TEXT,
+            table_number      TEXT,
+            caption           TEXT,
+            columns_json      TEXT,
+            row_json          TEXT,
+            source_page       INTEGER,
+            llm_model         TEXT
+        )""")
+    conn.commit()
+
+
+def _has_table(conn: sqlite3.Connection, name: str) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+        (name,)).fetchone() is not None
+
+
 def paper_type(conn: sqlite3.Connection, doi: str) -> str | None:
+    if not _has_table(conn, "papers"):
+        return None
     cur = conn.execute("SELECT paper_type FROM papers WHERE doi=?", (doi,))
     r = cur.fetchone()
     return r[0] if r else None
 
 
 def no_table_dois(conn: sqlite3.Connection) -> list[str]:
+    if not _has_table(conn, "papers"):
+        print("(no papers table yet — registered papers come from build_db.py; "
+              "pass DOIs explicitly or use --from-pdfs)")
+        return []
     cur = conn.execute("SELECT DISTINCT source_review_doi FROM table_rows")
     with_tables = {r[0] for r in cur.fetchall()}
     cur = conn.execute("SELECT doi FROM papers")
     return [d for (d,) in cur.fetchall() if d not in with_tables]
+
+
+def pdf_dois() -> list[str]:
+    """Entry point for a fresh clone: every DOI-named main PDF found under
+    the documented topics/<topic>/pdfs/ locations."""
+    dois = set()
+    for r in PDF_ROOTS:
+        if r.exists():
+            for p in r.glob("*.pdf"):
+                if not _is_si_name(p.name):
+                    dois.add(p.stem.replace("_", "/"))
+    return sorted(dois)
 
 
 def extract_tables(pdf: Path, converter, *, is_si: bool = False,
@@ -155,19 +197,26 @@ def store(conn: sqlite3.Connection, doi: str, ptype: str | None, tables) -> int:
 def main() -> None:
     ap = argparse.ArgumentParser(description="Docling tables → db.table_rows (no LLM)")
     ap.add_argument("dois", nargs="*", help="DOIs to ingest")
+    ap.add_argument("--from-pdfs", action="store_true",
+                    help="Ingest every DOI-named PDF found under topics/*/pdfs/ "
+                         "(the entry point on a fresh clone)")
     ap.add_argument("--from-no-tables", action="store_true",
-                    help="Ingest papers in DB that currently have no tables")
+                    help="Ingest DB-registered papers that have no tables yet")
     ap.add_argument("--limit", type=int, default=None)
     args = ap.parse_args()
 
+    DB.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB)
+    ensure_schema(conn)
     dois = list(args.dois)
+    if args.from_pdfs:
+        dois += [d for d in pdf_dois() if d not in dois]
     if args.from_no_tables:
         dois += no_table_dois(conn)
     if args.limit:
         dois = dois[:args.limit]
     if not dois:
-        raise SystemExit("no DOIs (pass DOIs or --from-no-tables)")
+        raise SystemExit("no DOIs (pass DOIs, or --from-pdfs / --from-no-tables)")
 
     print(f"Loading Docling … ({len(dois)} papers)\n")
     from docling.document_converter import DocumentConverter

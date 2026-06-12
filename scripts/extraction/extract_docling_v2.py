@@ -34,9 +34,19 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 ROOT     = Path(__file__).resolve().parents[2]
-PDF_DIR  = ROOT / "pdfs"
+# documented PDF locations (topics/<topic>/pdfs/) plus the legacy flat pdfs/
+PDF_ROOTS = [ROOT / "pdfs", ROOT / "topics/mta/pdfs",
+             ROOT / "topics/co2a/pdfs", ROOT / "topics/shared/pdfs"]
 OUT_DIR  = ROOT / "data" / "03_evidence"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _find_pdf(slug: str) -> Optional[Path]:
+    for r in PDF_ROOTS:
+        p = r / f"{slug}.pdf"
+        if p.exists():
+            return p
+    return None
 
 MODEL = "claude-haiku-4-5"
 
@@ -878,7 +888,8 @@ def _chunk_text(text: str, max_chars: int = 6000) -> List[str]:
 def main():
     parser = argparse.ArgumentParser(description="Extract Pipeline v2 (Docling-based)")
     parser.add_argument("--pdf", type=Path, help="Single PDF file")
-    parser.add_argument("--doi", help="DOI slug (looks up PDF in topics/)")
+    parser.add_argument("--doi", help="DOI (either form: 10.1016/j... or "
+                                      "10.1016_j...); PDF looked up in topics/")
     parser.add_argument("--all", action="store_true", help="Process all PDFs in topic")
     parser.add_argument("--topic", default="mta", help="Topic: mta, co2a, shared")
     parser.add_argument("--no-llm", action="store_true", help="Skip LLM calls (tables + regex only)")
@@ -900,12 +911,14 @@ def main():
     if args.pdf:
         pdfs = [args.pdf]
     elif args.doi:
-        slug = args.doi
-        p = PDF_DIR / f"{slug}.pdf"
-        if p.exists():
+        slug = args.doi.replace("/", "_")     # accept DOI or slug form
+        p = _find_pdf(slug)
+        if p:
             pdfs = [p]
         else:
-            print(f"PDF not found: {p}"); sys.exit(1)
+            print(f"PDF not found for {args.doi} — looked for {slug}.pdf in "
+                  + ", ".join(str(r) for r in PDF_ROOTS))
+            sys.exit(1)
     elif args.all:
         # Only process review papers (primary papers use extract_performance_primary.py)
         import sqlite3
@@ -916,7 +929,7 @@ def main():
                        ).fetchall()]
         conn.close()
         pdfs = sorted(p for slug in review_dois
-                      if (p := PDF_DIR / f"{slug}.pdf").exists())
+                      if (p := _find_pdf(slug)) is not None)
         args._db_paper_type = "review"   # all papers from --all are reviews
     else:
         parser.print_help(); sys.exit(1)

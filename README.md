@@ -187,13 +187,15 @@ plan & positioning: [notes/project_plan_v1.md](notes/project_plan_v1.md).
 
 ## Quickstart
 
-**Requirements:** Python 3.11+, macOS / Linux, an Anthropic API key.
+**Requirements:** Python 3.10+, macOS / Linux. An Anthropic API key is needed
+only for the LLM steps (Phase 0 relevance scoring, prose evidence, vision
+charts) — the table track runs without one.
 
 ```bash
 git clone https://github.com/Aval0nT/catalitmine.git
 cd catalitmine
-bash setup_env.sh                       # creates venv, installs deps, fetches CDE2 models
-cp .env.example .env                    # then edit .env, set ANTHROPIC_API_KEY
+bash setup_env.sh                       # venv + core deps (--with-cde2 adds the legacy evidence-track stack)
+cp .env.example .env                    # then edit .env, set ANTHROPIC_API_KEY (LLM steps only)
 source venv/bin/activate
 ```
 
@@ -226,8 +228,10 @@ python3 scripts/search/fetch_oa.py \
 ```bash
 # PDFs already in topics/<topic>/pdfs/ (DOI-named; add <doi>_SI.pdf for SI)
 
-# 1. Extract every table via Docling into db.table_rows (no API cost):
-python3 scripts/extraction/ingest_tables.py --from-no-tables
+# 1. Extract every table via Docling into db.table_rows (no API cost).
+#    --from-pdfs ingests every DOI-named PDF it finds and bootstraps the DB,
+#    so this is the entry point on a fresh clone:
+python3 scripts/extraction/ingest_tables.py --from-pdfs
 
 # 2. Join each paper's tables on the catalyst label → per-catalyst records:
 python3 scripts/analysis/build_catalyst_records.py
@@ -238,7 +242,8 @@ python3 scripts/analysis/validate_data.py
 # → outputs/reports/feature_matrix.csv
 ```
 
-**Path 3 — prose evidence + citation-network provenance:**
+**Path 3 — prose evidence + citation-network provenance**
+(needs `ANTHROPIC_API_KEY`; add `--no-llm` to run only the table + regex parts):
 
 ```bash
 python3 scripts/extraction/extract_docling_v2.py --doi 10.1016/j.apcatb.2021.120073 --topic mta

@@ -431,7 +431,7 @@ def main() -> None:
         description="Resolve ref numbers to DOIs (PDF annotations → text DOI → OpenAlex)"
     )
     grp = parser.add_mutually_exclusive_group(required=True)
-    grp.add_argument("--doi",  help="Sanitised DOI slug (underscores)")
+    grp.add_argument("--doi",  help="DOI (either form: 10.1016/j... or 10.1016_j...)")
     grp.add_argument("--all",  action="store_true",
                      help="Process all papers with a ref_lookup file")
     parser.add_argument("--dry-run",      action="store_true")
@@ -443,7 +443,7 @@ def main() -> None:
         slugs = [f.stem.replace(".ref_lookup", "")
                  for f in sorted(EVID.glob("*.ref_lookup.json"))]
     else:
-        slugs = [args.doi]
+        slugs = [args.doi.replace("/", "_")]   # accept DOI or slug form
 
     all_stats: Dict[str, Dict] = {}
     for slug in slugs:

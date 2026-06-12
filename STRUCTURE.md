@@ -16,8 +16,9 @@ catalitmine/
 ├── STRUCTURE.md             ← this file
 ├── CLAUDE.md                ← conventions for AI-assisted work (writing register, plan, layout)
 ├── LICENSE                  ← MIT
-├── requirements.txt         ← Python dependencies
-├── setup_env.sh             ← venv setup + model fetch
+├── requirements.txt         ← core Python dependencies (curated)
+├── requirements-cde2.txt    ← legacy CDE2 evidence-track extras (optional)
+├── setup_env.sh             ← venv setup (--with-cde2 adds the legacy stack)
 ├── .env.example             ← API-key template (copy to .env; .env is git-ignored)
 ├── settings.json            ← Claude Code permission settings (local tooling)
 │
