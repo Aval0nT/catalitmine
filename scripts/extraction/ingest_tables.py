@@ -19,8 +19,9 @@ import argparse
 import json
 import sqlite3
 import sys
-import warnings
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 ROOT = Path(__file__).resolve().parents[2]
 DB   = ROOT / "db" / "catalysis.db"
@@ -124,49 +125,40 @@ def pdf_dois() -> list[str]:
     return sorted(dois)
 
 
-def extract_tables(pdf: Path, converter, *, is_si: bool = False,
-                   si_prefix: str = "S"):
-    """Return list of (table_number, caption, headers, rows, page).
+def extract_tables(path: Path, *, stem: str | None = None,
+                   is_si: bool = False, si_prefix: str = "S",
+                   conv_holder: dict | None = None):
+    """Return list of (table_number, caption, headers, rows, page), served
+    from the parse-once cache (docling_cache) — Docling runs only when no
+    fresh cache exists, and that single parse also produces the figure crops
+    and the markdown the other extractors consume.
 
     SI tables are numbered S1, S2, … and captioned with an [SI] prefix so they
     stay traceable to the supplement. When a paper has SEVERAL SI files, each
     file gets its own prefix (S, S2-, S3-, …) so numbering never collides
-    across files — colliding table numbers produce colliding row_ids."""
-    result = converter.convert(pdf)
-    doc = result.document
+    across files — colliding table numbers produce colliding row_ids.
+
+    `conv_holder` is a one-slot dict sharing a lazily-built converter across
+    calls, so the Docling models load at most once per run. `stem` is the
+    cache key — pass the DOI slug for main papers so suffix-named PDFs cache
+    where scope_figures looks them up."""
+    import docling_cache as dcache
+    stem = stem or path.stem
+    if not dcache.is_fresh(stem, path):
+        conv = None
+        if conv_holder is not None:
+            if conv_holder.get("c") is None:
+                print("  Loading Docling …")
+                conv_holder["c"] = dcache._make_converter()
+            conv = conv_holder["c"]
+        dcache.parse_pdf(path, stem=stem, converter=conv,
+                         with_figures=not is_si)
     out = []
-    for ti, tbl in enumerate(doc.tables, 1):
-        try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                df = tbl.export_to_dataframe(doc)
-        except Exception:
-            try:
-                df = tbl.export_to_dataframe()
-            except Exception:
-                continue
-        if df is None or df.empty:
-            continue
-        headers = [str(c) for c in df.columns]
-        rows = [[("" if v is None else str(v)) for v in row]
-                for row in df.itertuples(index=False, name=None)]
-        # caption
-        caption = ""
-        try:
-            caption = tbl.caption_text(doc) or ""
-        except Exception:
-            pass
+    for ti, caption, headers, rows, page in dcache.load_tables(stem):
         if not caption:
             caption = f"Table {ti}"
         if is_si:
             caption = f"[SI] {caption}"
-        # page
-        page = None
-        try:
-            if tbl.prov:
-                page = tbl.prov[0].page_no
-        except Exception:
-            pass
         tnum = f"{si_prefix}{ti}" if is_si else str(ti)
         out.append((tnum, caption, headers, rows, page))
     return out
@@ -202,6 +194,9 @@ def main() -> None:
                          "(the entry point on a fresh clone)")
     ap.add_argument("--from-no-tables", action="store_true",
                     help="Ingest DB-registered papers that have no tables yet")
+    ap.add_argument("--workers", type=int, default=1,
+                    help="parallel Docling parse for uncached PDFs "
+                         "(cached papers ingest in milliseconds regardless)")
     ap.add_argument("--limit", type=int, default=None)
     args = ap.parse_args()
 
@@ -218,10 +213,14 @@ def main() -> None:
     if not dois:
         raise SystemExit("no DOIs (pass DOIs, or --from-pdfs / --from-no-tables)")
 
-    print(f"Loading Docling … ({len(dois)} papers)\n")
-    from docling.document_converter import DocumentConverter
-    converter = DocumentConverter()
+    if args.workers > 1:
+        # pre-warm the parse cache in parallel (filesystem only, no DB
+        # contention); the serial ingest below then reads caches instantly
+        from parse_pdfs import prewarm    # lazy: avoids circular import
+        prewarm(dois, workers=args.workers)
 
+    print(f"Ingesting {len(dois)} papers …\n")
+    holder: dict = {"c": None}            # lazily-shared Docling converter
     grand = 0
     for i, doi in enumerate(dois, 1):
         pdf = find_pdf(doi)
@@ -229,7 +228,8 @@ def main() -> None:
             print(f"[{i}/{len(dois)}] {doi}  — PDF not found, skip")
             continue
         try:
-            tables = extract_tables(pdf, converter)
+            tables = extract_tables(pdf, stem=doi.replace("/", "_"),
+                                    conv_holder=holder)
         except Exception as e:
             print(f"[{i}/{len(dois)}] {doi}  — convert failed: {e}")
             continue
@@ -239,8 +239,8 @@ def main() -> None:
         for k, si in enumerate(si_pdfs, 1):
             prefix = "S" if k == 1 else f"S{k}-"
             try:
-                si_tables += extract_tables(si, converter, is_si=True,
-                                            si_prefix=prefix)
+                si_tables += extract_tables(si, is_si=True, si_prefix=prefix,
+                                            conv_holder=holder)
             except Exception as e:
                 print(f"        [SI convert failed: {si.name}: {e}]")
         all_tables = tables + si_tables

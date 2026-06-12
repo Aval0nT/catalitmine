@@ -592,15 +592,21 @@ class PaperProcessor:
     # --- Stage 1: Parse ---
 
     def parse(self) -> None:
-        """Use Docling to parse PDF into structured sections + tables."""
-        from docling.document_converter import DocumentConverter
-        converter = DocumentConverter()
-        result = converter.convert(self.pdf_path)
-        self.doc = result.document
-        self.md_text = self.doc.export_to_markdown()
+        """Parse via the parse-once cache (docling_cache): the PDF is
+        converted at most once across ALL extractors; this method only runs
+        Docling when no fresh cache exists, then reads the artifacts."""
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import docling_cache as dcache
+        import pandas as pd
+        stem = self.doi_slug          # cache key = DOI slug (matches ingest)
+        if not dcache.is_fresh(stem, self.pdf_path):
+            print("  (no fresh parse cache — running Docling once)")
+            dcache.parse_pdf(self.pdf_path, stem=stem)
+        self.md_text = dcache.load_markdown(stem)
+        self.tables = [df for _, _, headers, rows, _ in dcache.load_tables(stem)
+                       if not (df := pd.DataFrame(rows, columns=headers)).empty]
 
         self._split_sections()
-        self._extract_tables()
 
         # Load ref_lookup: prefer existing file on disk, then parse from markdown
         ref_lookup_path = OUT_DIR / f"{self.doi_slug}.ref_lookup.json"
@@ -645,19 +651,6 @@ class PaperProcessor:
                     "cls": _classify_section(current_name),
                     "text": text,
                 })
-
-    def _extract_tables(self) -> None:
-        """Extract tables as DataFrames using current Docling API."""
-        import warnings
-        for tbl in self.doc.tables:
-            try:
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    df = tbl.export_to_dataframe()
-                if df is not None and not df.empty:
-                    self.tables.append(df)
-            except Exception as e:
-                print(f"    [table skip] {e}")
 
     def _detect_paper_type(self) -> None:
         """Auto-detect review vs primary based on section structure."""

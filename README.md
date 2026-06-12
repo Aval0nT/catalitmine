@@ -171,7 +171,8 @@ topics/*/pdfs/<doi>.pdf  (+ <doi>_SI.pdf)
 | Path | Role |
 |---|---|
 | `scripts/search/discover.py` | **Phase 0** — query → relevance-ranked shortlist (OpenAlex + S2 citation network + Claude scoring) |
-| `scripts/extraction/ingest_tables.py` | **Table track** — Docling tables → `db.table_rows` (LLM-free); auto-detects SI PDFs |
+| `scripts/extraction/parse_pdfs.py` | **Parse once** — parallel Docling parse of the corpus; all extractors read the cache (`docling_cache.py`) |
+| `scripts/extraction/ingest_tables.py` | **Table track** — tables → `db.table_rows` (LLM-free); cache-fed; auto-detects SI PDFs |
 | `scripts/analysis/build_catalyst_records.py` | **Table track** — join a paper's tables on the catalyst label → per-catalyst records |
 | `schema/table_attribute_keywords.json` | Maintainable header→attribute keyword library |
 | `scripts/analysis/validate_data.py` | Density / joinability / correlation go-no-go check |
@@ -234,9 +235,15 @@ python3 scripts/search/fetch_oa.py \
 ```bash
 # PDFs already in topics/<topic>/pdfs/ (DOI-named; add <doi>_SI.pdf for SI)
 
-# 1. Extract every table via Docling into db.table_rows (no API cost).
-#    --from-pdfs ingests every DOI-named PDF it finds and bootstraps the DB,
-#    so this is the entry point on a fresh clone:
+# 0. (recommended for many PDFs) one-time PARALLEL Docling parse. Each PDF is
+#    parsed exactly once into data/00_parsed/ + figure crops; every later
+#    stage (tables, figures, prose) reads that cache in seconds:
+python3 scripts/extraction/parse_pdfs.py --from-pdfs --workers 6
+
+# 1. Extract every table into db.table_rows (no API cost). Reads the parse
+#    cache when present, runs Docling itself when not. --from-pdfs ingests
+#    every DOI-named PDF it finds and bootstraps the DB, so this is the entry
+#    point on a fresh clone:
 python3 scripts/extraction/ingest_tables.py --from-pdfs
 
 # 2. Join each paper's tables on the catalyst label → per-catalyst records:

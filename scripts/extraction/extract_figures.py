@@ -33,26 +33,35 @@ def find_pdf(doi: str) -> Path | None:
 
 
 def extract(pdf: Path, out_dir: Path, scale: float = 2.0,
-            stem: str | None = None) -> int:
+            stem: str | None = None, doc=None) -> int:
     """Crop figures to PNGs and write <stem>.captions.json.
 
     `stem` defaults to the PDF filename, but callers that cache by DOI slug
     (scope_figures) pass the slug — for suffix-named PDFs ("<slug> (1).pdf")
-    the two differ, and a mismatched stem makes the captions cache invisible."""
-    from docling.document_converter import DocumentConverter, PdfFormatOption
-    from docling.datamodel.pipeline_options import PdfPipelineOptions
-    from docling.datamodel.base_models import InputFormat
+    the two differ, and a mismatched stem makes the captions cache invisible.
 
-    opts = PdfPipelineOptions()
-    opts.images_scale = scale
-    opts.generate_picture_images = True          # keep cropped figure bitmaps
-    conv = DocumentConverter(
-        format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=opts)})
+    `doc` accepts an already-converted Docling document (docling_cache parses
+    each PDF once and shares the document across extractors); without it this
+    function runs its own conversion as before."""
+    if doc is None:
+        from docling.document_converter import DocumentConverter, PdfFormatOption
+        from docling.datamodel.pipeline_options import PdfPipelineOptions
+        from docling.datamodel.base_models import InputFormat
 
-    result = conv.convert(pdf)
-    doc = result.document
+        opts = PdfPipelineOptions()
+        opts.images_scale = scale
+        opts.generate_picture_images = True      # keep cropped figure bitmaps
+        conv = DocumentConverter(
+            format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=opts)})
+        doc = conv.convert(pdf).document
     out_dir.mkdir(parents=True, exist_ok=True)
     stem = stem or pdf.stem
+    # clear THIS stem's previous generation: a reparse of a replaced PDF must
+    # not leave ghost PNGs that stale figure_scope rows would silently feed to
+    # the chart extractors
+    for old in out_dir.glob(f"{stem}_fig*.png"):
+        old.unlink()
+    (out_dir / f"{stem}.captions.json").unlink(missing_ok=True)
     n = 0
     captions: dict[str, str] = {}
     for i, pic in enumerate(doc.pictures, 1):

@@ -53,7 +53,9 @@ scripts/
 │   └── s2_abstract_dryrun.py      ← abstract-coverage measurement tool
 │
 ├── extraction/                    ← PDF → structured data
-│   ├── ingest_tables.py           ← Table track: Docling tables → db.table_rows (no LLM; auto-detects SI)
+│   ├── docling_cache.py           ← parse-once layer: ONE Docling conversion per PDF, plain artifacts
+│   ├── parse_pdfs.py              ← parallel batch parser (the heavy step, run once; --workers N)
+│   ├── ingest_tables.py           ← Table track: tables → db.table_rows (no LLM; cache-fed; auto-detects SI)
 │   ├── diagnose_tables.py         ← table-extraction diagnostic
 │   ├── extract_figures.py         ← Figure track: Docling figure crops + captions
 │   ├── scope_figures.py           ← Figure track: caption-based type inventory (no API)
@@ -125,6 +127,7 @@ copyrighted papers, and regeneratable from code + PDFs):
 
 ```
 topics/<topic>/pdfs/<doi>.pdf       ← input PDFs (+ <doi>_SI.pdf for Supporting Information)
+data/00_parsed/<stem>/              ← parse-once cache (doc.md, tables.json, meta.json)
 data/04_search/shortlist_*.md       ← Phase 0 shortlist output
 data/05_normalized/catalyst_records_<date>.jsonl
 db/catalysis.db                     ← consolidated store

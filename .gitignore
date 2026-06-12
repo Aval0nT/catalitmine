@@ -39,6 +39,7 @@ topics/shared/pdfs/
 # ────────────────────────────────────────────────────────────────────────────
 # Pipeline intermediates (regeneratable; can be re-derived from PDFs + scripts)
 # ────────────────────────────────────────────────────────────────────────────
+data/00_parsed/
 data/00_raw/
 data/01_chunks/
 data/02_enriched/
