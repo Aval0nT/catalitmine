@@ -2,7 +2,8 @@
 
 How the pipeline turns catalysis plots into structured per-catalyst data, and
 where the figure track is going. Companion to the **Figure track** in
-[../README.md](../README.md).
+[../README.md](../README.md). Live status, task queue, and the decision log
+are tracked in [figure_track_todo.md](figure_track_todo.md).
 
 ---
 
