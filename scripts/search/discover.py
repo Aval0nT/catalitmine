@@ -263,13 +263,22 @@ def openalex_enrich(c: Candidate) -> Candidate:
             return c
         _cache_write(cache, w)
 
-    enriched = _oa_work_to_candidate(w, "openalex:enrich") or c
-    # merge: keep existing source tags + relevance
-    enriched.source = list(dict.fromkeys(c.source + enriched.source))
-    enriched.relevance = c.relevance
-    enriched.relevance_reason = c.relevance_reason
-    enriched.influential_citation_count = c.influential_citation_count
-    return enriched
+    oa = _oa_work_to_candidate(w, "openalex:enrich")
+    if oa is None:
+        return c
+    # field-wise merge: OpenAlex fills gaps but must never erase richer S2
+    # metadata — it often carries no abstract for closed-access publishers,
+    # and a wholesale replacement was discarding the S2 abstract entirely
+    c.title = c.title or oa.title
+    c.year = c.year if c.year is not None else oa.year
+    c.venue = c.venue or oa.venue
+    c.authors = c.authors or oa.authors
+    c.abstract = c.abstract or oa.abstract
+    c.oa_url = c.oa_url or oa.oa_url
+    c.is_open_access = bool(c.is_open_access or oa.is_open_access)
+    c.citation_count = max(c.citation_count or 0, oa.citation_count or 0)
+    c.source = list(dict.fromkeys(c.source + oa.source))
+    return c
 
 
 # ── Semantic Scholar helpers ──────────────────────────────────────────────────
@@ -314,7 +323,9 @@ def s2_references(doi: str, limit: int = 50) -> list[Candidate]:
     try:
         data = _http_get_json(url, which="s2",
                               min_interval=_s2_interval())
-    except Exception:
+    except Exception as e:
+        print(f"[warn] S2 references failed for {doi}: {e} — expansion degraded",
+              file=sys.stderr)
         return []
     cands = []
     for item in (data.get("data") or []):
@@ -335,7 +346,9 @@ def s2_citations(doi: str, limit: int = 50) -> list[Candidate]:
     try:
         data = _http_get_json(url, which="s2",
                               min_interval=_s2_interval())
-    except Exception:
+    except Exception as e:
+        print(f"[warn] S2 citations failed for {doi}: {e} — expansion degraded",
+              file=sys.stderr)
         return []
     cands = []
     for item in (data.get("data") or []):
@@ -361,7 +374,9 @@ def s2_recommendations(seed_dois: list[str], limit: int = 50) -> list[Candidate]
             try:
                 data = _http_get_json(url, which="s2",
                                       min_interval=_s2_interval())
-            except Exception:
+            except Exception as e:
+                print(f"[warn] S2 id lookup failed for {doi}: {e}",
+                      file=sys.stderr)
                 continue
             _cache_write(cache, data)
             pid = (data or {}).get("paperId")
@@ -378,7 +393,9 @@ def s2_recommendations(seed_dois: list[str], limit: int = 50) -> list[Candidate]
     try:
         data = _http_post_json(url, body, which="s2",
                                 min_interval=_s2_interval())
-    except Exception:
+    except Exception as e:
+        print(f"[warn] S2 recommendations failed: {e} — expansion degraded",
+              file=sys.stderr)
         return []
     cands = []
     for p in (data.get("recommendedPapers") or []):
@@ -448,8 +465,15 @@ def _score_with_claude(query: str, cands: list[Candidate], verbose: bool) -> Non
                 messages=[{"role": "user", "content": prompt}],
             )
             text = "".join(b.text for b in resp.content if hasattr(b, "text")).strip()
-            obj  = _extract_json(text) or {}
-            c.relevance = float(obj.get("relevance", 0.0))
+            obj  = _extract_json(text)
+            if obj is None or "relevance" not in obj:
+                # an unparseable reply must stay UNSCORED, never become a
+                # cached 0.0 that silently hides the paper from the shortlist
+                print(f"  [llm unparseable] {c.doi} — left unscored",
+                      file=sys.stderr)
+                c.relevance = None
+                continue
+            c.relevance = min(1.0, max(0.0, float(obj["relevance"])))
             c.relevance_reason = (obj.get("reason") or "")[:200]
             _cache_write(cache, {"relevance":     c.relevance,
                                  "reason":         c.relevance_reason})

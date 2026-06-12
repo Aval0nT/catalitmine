@@ -134,6 +134,20 @@ def _classify_section(name: str) -> str:
 # Regex condition extraction (for Experimental sections)
 # ---------------------------------------------------------------------------
 
+# step-exclusion machinery for multi-temperature resolution (mirrors
+# scripts/db/fill_conditions_regex.py — keep the two in sync)
+_T_STEP = re.compile(
+    r"\b(?:calcin\w*|dried|drying|desorption|tpd|regenerat\w*"
+    r"|reduc(?:ed|tion|ing)|pretreat\w*|aged|aging|sinter\w*"
+    r"|vaporiz\w*|preheat\w*)"
+    r"\s+(?:(?:peak|peaks|profile|profiles|temperature|temperatures"
+    r"|step|ramp)\s+)?"
+    r"(?:at|to|in|under|between|for|with|of|overnight)\b", re.I)
+_T_CLAUSE = re.compile(r"[.,;](?=\s)|\band\b(?!\s*\d|\s*$)|\bthen\b|\bbefore\b"
+                       r"|\bafter\b|followed\s+by", re.I)
+_T_RXVERB = re.compile(r"test|evaluat|react|perform|measur|carried\s+out", re.I)
+
+
 def _extract_conditions_regex(text: str) -> Dict[str, Any]:
     """Extract reaction conditions from Experimental section text."""
     conditions: Dict[str, Any] = {}
@@ -169,16 +183,25 @@ def _extract_conditions_regex(text: str) -> Dict[str, Any]:
                     continue
                 # admit by the SENTENCE containing the match (a fixed-width
                 # window leaks the neighbouring sentence's step words); exclude
-                # by the words DIRECTLY BEFORE the number — "calcined at 550 °C"
-                # names a step, but "at 400 °C over the calcined catalyst" is
-                # the reaction with an adjective, and must not be excluded
+                # when a non-reaction step VERB governs the value. The
+                # look-back walks clause fragments right-to-left and stops at
+                # the nearest reaction verb, with parentheticals masked so
+                # "(40 mL min-1, 2 h)" cannot cut a step word out of scope;
+                # "calcined catalyst" (adjective) is not an exclusion
                 s = text.rfind(". ", 0, m.start()) + 1
                 e = text.find(". ", m.end())
                 ctx = text[s:e if e != -1 else len(text)].lower()
-                pre = text[max(0, m.start() - 60):m.start()].lower()
-                if re.search(r"reaction|reactor|on[\s-]stream|test|evaluat", ctx) \
-                   and not re.search(r"calcin|dried|drying|regener|reduc|pretreat"
-                                     r"|aging|aged|sinter|vaporiz|preheat", pre):
+                window = re.sub(r"\([^)]*\)", " ",
+                                text[max(0, m.start() - 120):m.start()].lower())
+                scope = []
+                for frag in reversed(_T_CLAUSE.split(window)):
+                    scope.append(frag)
+                    if _T_RXVERB.search(frag):
+                        break
+                pre = " ".join(reversed(scope))
+                if re.search(r"reaction|reactor|on[\s-]stream|test|evaluat"
+                             r"|measur|perform|carried out|catalytic", ctx) \
+                   and not _T_STEP.search(pre):
                     rx.add(v)
             if len(rx) == 1:
                 conditions["temperature_c"] = rx.pop()

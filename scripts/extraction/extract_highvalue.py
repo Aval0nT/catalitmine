@@ -31,7 +31,11 @@ def main() -> None:
     ap.add_argument("--types", default="structure_activity",
                     help="comma-separated caption types to include")
     ap.add_argument("--limit", type=int, default=None)
-    ap.add_argument("--skip-existing", action="store_true", default=True)
+    ap.add_argument("--skip-existing", action=argparse.BooleanOptionalAction,
+                    default=True,
+                    help="skip figures with a successful result on disk "
+                         "(failed results are always retried); "
+                         "--no-skip-existing re-runs everything")
     args = ap.parse_args()
 
     want = set(args.types.split(","))
@@ -51,7 +55,14 @@ def main() -> None:
         if not png.exists():
             print(f"  · missing PNG: {r['figure']}"); miss += 1; continue
         if args.skip_existing and out.exists():
-            skipped += 1; continue
+            # only a SUCCESSFUL result counts as done — an error result
+            # (API failure, unparseable reply) is retried, not skipped
+            try:
+                prev = json.loads(out.read_text(encoding="utf-8"))
+            except Exception:
+                prev = None
+            if prev is not None and not prev.get("error"):
+                skipped += 1; continue
         res = ex.extract(png)
         out.write_text(json.dumps(res.to_dict(), ensure_ascii=False, indent=2),
                        encoding="utf-8")

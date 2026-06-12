@@ -82,11 +82,14 @@ def no_table_dois(conn: sqlite3.Connection) -> list[str]:
     return [d for (d,) in cur.fetchall() if d not in with_tables]
 
 
-def extract_tables(pdf: Path, converter, *, is_si: bool = False):
+def extract_tables(pdf: Path, converter, *, is_si: bool = False,
+                   si_prefix: str = "S"):
     """Return list of (table_number, caption, headers, rows, page).
 
     SI tables are numbered S1, S2, … and captioned with an [SI] prefix so they
-    stay traceable to the supplement."""
+    stay traceable to the supplement. When a paper has SEVERAL SI files, each
+    file gets its own prefix (S, S2-, S3-, …) so numbering never collides
+    across files — colliding table numbers produce colliding row_ids."""
     result = converter.convert(pdf)
     doc = result.document
     out = []
@@ -122,7 +125,7 @@ def extract_tables(pdf: Path, converter, *, is_si: bool = False):
                 page = tbl.prov[0].page_no
         except Exception:
             pass
-        tnum = f"S{ti}" if is_si else str(ti)
+        tnum = f"{si_prefix}{ti}" if is_si else str(ti)
         out.append((tnum, caption, headers, rows, page))
     return out
 
@@ -137,7 +140,9 @@ def store(conn: sqlite3.Connection, doi: str, ptype: str | None, tables) -> int:
     for ti, caption, headers, rows, page in tables:
         cols_j = json.dumps(headers, ensure_ascii=False)
         for j, row in enumerate(rows, 1):
-            row_id = f"{slug}::tbl{ti}::r{j:03d}"
+            # tool-namespaced: build_db's vision import uses its own namespace,
+            # so the two writers can never REPLACE each other's rows
+            row_id = f"{slug}::docling::tbl{ti}::r{j:03d}"
             conn.execute(
                 "INSERT OR REPLACE INTO table_rows VALUES (?,?,?,?,?,?,?,?,?)",
                 (row_id, doi, primary, str(ti), caption, cols_j,
@@ -182,9 +187,11 @@ def main() -> None:
         # Supporting Information (if the user downloaded it alongside)
         si_pdfs = find_si_pdfs(doi)
         si_tables = []
-        for si in si_pdfs:
+        for k, si in enumerate(si_pdfs, 1):
+            prefix = "S" if k == 1 else f"S{k}-"
             try:
-                si_tables += extract_tables(si, converter, is_si=True)
+                si_tables += extract_tables(si, converter, is_si=True,
+                                            si_prefix=prefix)
             except Exception as e:
                 print(f"        [SI convert failed: {si.name}: {e}]")
         all_tables = tables + si_tables

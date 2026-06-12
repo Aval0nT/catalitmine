@@ -81,7 +81,9 @@ def captions_for(doi: str) -> dict | None:
     if not pdf:
         return None
     try:
-        extract(pdf, fdir, scale=2.0)        # writes captions.json
+        # cache by SLUG, not pdf.stem — find_pdf's glob accepts suffix-named
+        # PDFs whose stem differs from the slug, which made the cache invisible
+        extract(pdf, fdir, scale=2.0, stem=slug)   # writes <slug>.captions.json
     except Exception as e:
         print(f"    extract failed: {e}")
         return None

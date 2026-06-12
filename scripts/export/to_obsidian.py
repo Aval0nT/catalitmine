@@ -85,8 +85,12 @@ def _fetch_abstract(doi: str) -> str:
 # Obsidian filename
 # ---------------------------------------------------------------------------
 
-def _note_filename(first_author: str, year: int, journal: str) -> str:
-    """e.g. '2018 Pinilla-Herrero - J. Catal..md'"""
+def _note_filename(first_author: str, year: int, journal: str, doi: str = "") -> str:
+    """e.g. '2018 Pinilla-Herrero - J. Catal. (j.jcat.2018.03.032).md'
+
+    The DOI tail keeps the name unique: two same-author/-year/-journal papers
+    (e.g. the two Sun 2014 J. Catal. papers in the corpus) would otherwise map
+    to one file and silently overwrite each other."""
     # Shorten journal name
     journal_short = (journal or "")
     journal_short = re.sub(r'\bJournal of\b', 'J.', journal_short)
@@ -95,7 +99,9 @@ def _note_filename(first_author: str, year: int, journal: str) -> str:
     journal_short = re.sub(r'\s+', ' ', journal_short)
     # Strip chars not allowed in filenames
     safe = re.sub(r'[/\\:*?"<>|]', '', journal_short).strip()
-    return f"{year} {first_author} - {safe}.md"
+    tail = re.sub(r'[/\\:*?"<>|]', '', (doi or "").split("/", 1)[-1]).strip()
+    suffix = f" ({tail})" if tail else ""
+    return f"{year} {first_author} - {safe}{suffix}.md"
 
 
 # ---------------------------------------------------------------------------
@@ -366,8 +372,15 @@ def process_paper(conn: sqlite3.Connection, paper: dict, fetch_abstract: bool = 
 
     note = render_note(paper, abstract, performance, claims, preparation, characterization)
 
-    fname = _note_filename(paper["first_author"] or "Unknown", paper["year"] or 0, paper["journal"] or "")
+    fname = _note_filename(paper["first_author"] or "Unknown", paper["year"] or 0,
+                           paper["journal"] or "", doi)
     out_path = OUT_DIR / fname
+    # migrate away from the pre-DOI-suffix name, or the old file lingers in
+    # the vault as a stale duplicate of this note
+    legacy = OUT_DIR / _note_filename(paper["first_author"] or "Unknown",
+                                      paper["year"] or 0, paper["journal"] or "")
+    if legacy.exists():
+        legacy.unlink()
     out_path.write_text(note, encoding="utf-8")
     print(f"✓  ({len(performance)} perf, {len(claims)} claims, {len(characterization)} char)")
     return out_path
@@ -413,5 +426,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    with sqlite3.connect(DB_PATH) as conn:
-        main()
+    main()

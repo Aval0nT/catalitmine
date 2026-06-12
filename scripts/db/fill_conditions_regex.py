@@ -43,41 +43,87 @@ def _temp_c(text: str) -> list[float]:
       "4508C"           — garbled: 450 + '8' (mangled degree) + C (4-digit artefact)
 
     All results are sanity-clamped to 150–800 °C for MTA reactions.
+    Matches directly preceded by a non-reaction step word (calcined at …,
+    dried at …, NH3-TPD ramp, regeneration) are skipped — those temperatures
+    must not pose as the reaction temperature.
     """
     results = []
 
-    def _add(val):
+    def _add(val, start=None):
+        if start is not None and _step_before(text, start):
+            return
         if 150 <= val <= 800:
             results.append(float(val))
 
+    # Ranges "400-450 °C": emit BOTH endpoints so multi-value resolution sees
+    # them — a bare upper endpoint must not pose as THE reaction temperature
+    for m in re.finditer(r"\b(\d{3})\s*[-–—~]\s*(\d{3})\s*(?:[°◦∘]\s*[Cc]\b|℃)", text):
+        _add(float(m.group(1)), m.start())
+        _add(float(m.group(2)), m.start())
+
     # Standard °C (U+00B0)
     for m in re.finditer(r"\b(\d{3})\s*°\s*[Cc]\b", text):
-        _add(float(m.group(1)))
+        _add(float(m.group(1)), m.start())
 
     # Ring-above ◦C  (U+25E6 or U+02DA)
     for m in re.finditer(r"\b(\d{3})\s*[◦∘]\s*[Cc]\b", text):
-        _add(float(m.group(1)))
+        _add(float(m.group(1)), m.start())
 
     # Special Celsius symbol ℃ (U+2103)
     for m in re.finditer(r"\b(\d{3})\s*℃", text):
-        _add(float(m.group(1)))
+        _add(float(m.group(1)), m.start())
 
     # CID encoding: "450 (cid:N)C"
     for m in re.finditer(r"\b(\d{3})\s*\(cid:\d+\)\s*[Cc]\b", text):
-        _add(float(m.group(1)))
+        _add(float(m.group(1)), m.start())
 
     # Garbled degree: "4508C" → extract first 3 digits
     # Match 4-digit number where first 3 are in range and 4th is a garbled char
     for m in re.finditer(r"\b([3-7]\d{2})[0-9][Cc]\b", text):
-        _add(float(m.group(1)))
+        _add(float(m.group(1)), m.start())
 
     # Kelvin (explicit K, range 423–1073 K = 150–800 °C)
     for m in re.finditer(r"\b(\d{3,4})\s*K\b", text):
         k = float(m.group(1))
-        if 423 <= k <= 1073:
+        if 423 <= k <= 1073 and not _step_before(text, m.start()):
             results.append(round(k - 273.15, 1))
 
     return results
+
+
+# A non-reaction step governs a value only as a TREATMENT VERB heading the
+# value's phrase ("calcined at", "reduced under", "dried overnight") — never
+# as an adjective ("the as-calcined catalyst", "over the reduced catalyst").
+_STEP = re.compile(
+    r"\b(?:calcin\w*|dried|drying|desorption|tpd|regenerat\w*"
+    r"|reduc(?:ed|tion|ing)|pretreat\w*|aged|aging|sinter\w*"
+    r"|vaporiz\w*|preheat\w*)"
+    r"\s+(?:(?:peak|peaks|profile|profiles|temperature|temperatures"
+    r"|step|ramp)\s+)?"
+    r"(?:at|to|in|under|between|for|with|of|overnight)\b", re.I)
+# clause boundaries: punctuation must be followed by whitespace ("4.5 h" and
+# "vol.%" are not boundaries) and "and" joining two values ("between 300 and
+# 600 °C") is not a boundary either
+_CLAUSE = re.compile(r"[.,;](?=\s)|\band\b(?!\s*\d|\s*$)|\bthen\b|\bbefore\b"
+                     r"|\bafter\b|followed\s+by", re.I)
+# a reaction verb starts the value's own governing context — the look-back
+# stops there instead of at the nearest comma, so step descriptions that
+# contain commas ("calcined in static air, heated to 550 °C") stay in scope
+_RXVERB = re.compile(r"test|evaluat|react|perform|measur|carried\s+out", re.I)
+
+def _step_before(text: str, start: int) -> bool:
+    """Does a non-reaction step word govern the value at `start`?
+
+    Walks clause fragments right-to-left from the value, stopping at the
+    nearest reaction verb; parenthetical specs ("(40 mL min-1, 2 h)") are
+    masked first so their commas cannot cut a step word out of scope."""
+    window = re.sub(r"\([^)]*\)", " ", text[max(0, start - 120):start])
+    scope = []
+    for frag in reversed(_CLAUSE.split(window)):
+        scope.append(frag)
+        if _RXVERB.search(frag):
+            break
+    return bool(_STEP.search(" ".join(reversed(scope))))
 
 
 def _pressure_mpa(text: str) -> list[float]:
@@ -95,26 +141,31 @@ def _pressure_mpa(text: str) -> list[float]:
 
 def _whsv(text: str) -> list[float]:
     results = []
+    # "WHSV of 2 h-1", "WHSV = 2 h-1", "WHSV 2 h-1" — (?:[=:]|of)? is a real
+    # alternation; the old [=:of\s] was a one-CHARACTER class that could never
+    # match the word "of"
     for m in re.finditer(
-        r"WHSV\s*[=:of\s]\s*(\d+\.?\d*)\s*(?:h[-−]1|h\^[-−]?1|/h|·h[-−]1)",
+        r"WHSV\s*(?:[=:]|of)?\s*(\d+\.?\d*)\s*(?:h[-−]1|h\^[-−]?1|/h|·h[-−]1)",
         text, re.I
     ):
         results.append(float(m.group(1)))
-    # looser: "WHSV = 2" or "WHSV of 2"
-    for m in re.finditer(r"WHSV\s*[=:]\s*(\d+\.?\d*)", text, re.I):
+    # looser (no unit anchor): require an explicit separator so a citation
+    # year ("WHSV 2021") cannot match
+    for m in re.finditer(r"WHSV\s*(?:[=:]|of)\s*(\d+\.?\d*)", text, re.I):
         results.append(float(m.group(1)))
     return list(dict.fromkeys(results))   # deduplicate preserving order
 
 
 def _ghsv(text: str) -> list[float]:
     results = []
+    # leading digit required: "GHSV," must not capture a bare comma
     for m in re.finditer(
-        r"GHSV\s*[=:of\s]\s*([\d,]+\.?\d*)\s*(?:mL|ml|cm3|h[-−]1|/h)",
+        r"GHSV\s*(?:[=:]|of)?\s*(\d[\d,]*\.?\d*)\s*(?:mL|ml|cm3|h[-−]1|/h)",
         text, re.I
     ):
         val = float(m.group(1).replace(",", ""))
         results.append(val)
-    for m in re.finditer(r"GHSV\s*[=:]\s*([\d,]+\.?\d*)", text, re.I):
+    for m in re.finditer(r"GHSV\s*(?:[=:]|of)\s*(\d[\d,]*\.?\d*)", text, re.I):
         val = float(m.group(1).replace(",", ""))
         results.append(val)
     return list(dict.fromkeys(results))
@@ -305,6 +356,14 @@ def main() -> None:
     args = parser.parse_args()
 
     with sqlite3.connect(DB_PATH) as conn:
+        # self-migrate: the columns this script fills were added after the
+        # first release; make the script runnable against an older DB
+        have = {r[1] for r in conn.execute("PRAGMA table_info(evidence_units)")}
+        for col, typ in (("catalyst_loading_g", "REAL"), ("temperature_note", "TEXT")):
+            if col not in have:
+                conn.execute(f"ALTER TABLE evidence_units ADD COLUMN {col} {typ}")
+        conn.commit()
+
         if args.doi:
             slugs = [args.doi]
         else:

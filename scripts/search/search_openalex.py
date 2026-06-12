@@ -3,12 +3,12 @@
 search_openalex.py — Literature search via OpenAlex + Unpaywall OA check
 
 Usage:
-  python3 scripts/search_openalex.py --query "methanol to aromatics zeolite" --min-citations 30
-  python3 scripts/search_openalex.py --query "CO2 hydrogenation aromatics bifunctional" --min-year 2018 --min-if-tier A
-  python3 scripts/search_openalex.py --query "MTA HZSM-5 selectivity" --min-citations 20 --max-results 50
+  python3 scripts/search/search_openalex.py --query "methanol to aromatics zeolite" --min-citations 30
+  python3 scripts/search/search_openalex.py --query "CO2 hydrogenation aromatics bifunctional" --min-year 2018 --min-if-tier A
+  python3 scripts/search/search_openalex.py --query "MTA HZSM-5 selectivity" --min-citations 20 --max-results 50
 
 Output:
-  data/search_results/<sanitized_query>_<date>.csv
+  data/04_search/<sanitized_query>_<date>.csv
 
 Required:
   pip install requests
@@ -27,9 +27,10 @@ try:
 except ImportError:
     raise SystemExit("Install requests first: pip install requests")
 
-ROOT = Path(__file__).resolve().parents[1]
-OUT_DIR = ROOT / "data" / "search_results"
-OUT_DIR.mkdir(parents=True, exist_ok=True)
+# parents[2]: this file lives in scripts/search/, two levels below the repo
+# root — parents[1] wrote output into scripts/data/, which is NOT gitignored
+ROOT = Path(__file__).resolve().parents[2]
+OUT_DIR = ROOT / "data" / "04_search"   # gitignored (copyrighted abstracts)
 
 # ---------------------------------------------------------------------------
 # Journal IF table — approximate 2023/2024 values, edit as needed
@@ -143,13 +144,27 @@ def get_journal_name(work: dict) -> str:
 
 
 def get_if_tier(journal: str) -> "tuple[str, float]":
-    """Look up IF tier, try partial match if exact fails."""
+    """Look up IF tier, try partial match if exact fails.
+
+    Journal-less works return '?': the old two-way substring test made the
+    empty string match every key, handing Tier S to any work with no journal
+    (and 'Science' to 'Chemical Science')."""
+    if not journal:
+        return ("?", 0.0)
     if journal in JOURNAL_IF:
         return JOURNAL_IF[journal]
-    # try case-insensitive partial match
     jl = journal.lower()
+    # short flagship names need EXACT matching: as substring keys they would
+    # swallow longer distinct journals ("Chem" → "Chemical Engineering Journal")
+    short_exact = {"nature": ("S", 50.0), "science": ("S", 45.0),
+                   "chem": ("S", 19.0)}
+    if jl in short_exact:
+        return short_exact[jl]
+    # one-directional: a known KEY contained in the (longer) reported name,
+    # e.g. "Applied Catalysis B: Environmental (incl. Energy)" — never the
+    # reverse, which let short names swallow longer distinct journals
     for k, v in JOURNAL_IF.items():
-        if k.lower() in jl or jl in k.lower():
+        if k.lower() in jl:
             return v
     return ("?", 0.0)
 
@@ -196,6 +211,7 @@ def main():
     parser.add_argument("--no-unpaywall", action="store_true", help="Skip Unpaywall OA check (faster)")
     args = parser.parse_args()
 
+    OUT_DIR.mkdir(parents=True, exist_ok=True)   # not at import time
     min_tier_rank = TIER_ORDER[args.min_if_tier]
 
     print(f"\nSearch query: {args.query}")

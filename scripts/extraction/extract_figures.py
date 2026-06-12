@@ -32,7 +32,13 @@ def find_pdf(doi: str) -> Path | None:
     return None
 
 
-def extract(pdf: Path, out_dir: Path, scale: float = 2.0) -> int:
+def extract(pdf: Path, out_dir: Path, scale: float = 2.0,
+            stem: str | None = None) -> int:
+    """Crop figures to PNGs and write <stem>.captions.json.
+
+    `stem` defaults to the PDF filename, but callers that cache by DOI slug
+    (scope_figures) pass the slug — for suffix-named PDFs ("<slug> (1).pdf")
+    the two differ, and a mismatched stem makes the captions cache invisible."""
     from docling.document_converter import DocumentConverter, PdfFormatOption
     from docling.datamodel.pipeline_options import PdfPipelineOptions
     from docling.datamodel.base_models import InputFormat
@@ -46,7 +52,7 @@ def extract(pdf: Path, out_dir: Path, scale: float = 2.0) -> int:
     result = conv.convert(pdf)
     doc = result.document
     out_dir.mkdir(parents=True, exist_ok=True)
-    stem = pdf.stem
+    stem = stem or pdf.stem
     n = 0
     captions: dict[str, str] = {}
     for i, pic in enumerate(doc.pictures, 1):
@@ -75,10 +81,11 @@ def extract(pdf: Path, out_dir: Path, scale: float = 2.0) -> int:
         n += 1
         print(f"  saved {dest.name}  ({img.width}x{img.height})"
               + (f"  | {captions[dest.name][:60]}" if cap else ""))
-    if captions:
-        import json
-        (out_dir / f"{stem}.captions.json").write_text(
-            json.dumps(captions, ensure_ascii=False, indent=2), encoding="utf-8")
+    # always write the captions file (possibly {}) so zero-figure papers are
+    # cached too and a rescan does not re-run Docling on them
+    import json
+    (out_dir / f"{stem}.captions.json").write_text(
+        json.dumps(captions, ensure_ascii=False, indent=2), encoding="utf-8")
     return n
 
 

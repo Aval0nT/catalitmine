@@ -16,6 +16,7 @@ import argparse
 import json
 import re
 import sqlite3
+import sys
 from pathlib import Path
 
 ROOT     = Path(__file__).resolve().parents[2]
@@ -472,6 +473,9 @@ def create_schema(conn: sqlite3.Connection) -> None:
         whsv                REAL,
         ghsv                REAL,
         feed_methanol_conc  TEXT,
+        -- filled post-import by scripts/db/fill_conditions_regex.py
+        catalyst_loading_g  REAL,
+        temperature_note    TEXT,
 
         -- Claim / Mechanism (Pass 3)
         claim_type          TEXT,
@@ -513,9 +517,11 @@ def create_schema(conn: sqlite3.Connection) -> None:
     # migrate DBs created before these columns existed (CREATE TABLE IF NOT
     # EXISTS does not add columns to an existing table)
     have = {r[1] for r in conn.execute("PRAGMA table_info(evidence_units)")}
-    for col in ("co2_conv_pct", "co_conv_pct", "conversion_pct"):
+    for col, typ in (("co2_conv_pct", "REAL"), ("co_conv_pct", "REAL"),
+                     ("conversion_pct", "REAL"), ("catalyst_loading_g", "REAL"),
+                     ("temperature_note", "TEXT")):
         if col not in have:
-            conn.execute(f"ALTER TABLE evidence_units ADD COLUMN {col} REAL")
+            conn.execute(f"ALTER TABLE evidence_units ADD COLUMN {col} {typ}")
     conn.commit()
 
 
@@ -526,6 +532,12 @@ def _safe_float(val) -> float | None:
         return float(str(val).replace("%", "").replace("wt%", "").strip())
     except (ValueError, TypeError):
         return None
+
+
+def _first(*vals):
+    """First value that is not None. Unlike an `or` chain, a legitimate 0
+    (deactivated catalyst, 0% fraction, tos_h=0) does not fall through."""
+    return next((v for v in vals if v is not None), None)
 
 
 def _safe_int(val) -> int | None:
@@ -584,21 +596,27 @@ def import_evidence(conn: sqlite3.Connection) -> int:
 
             # temperature: schema uses temperature_c (lowercase); old JSONL may have
             # temperature_C or temperature_K in top-level or extra_fields
-            temp_c = _safe_float(u.get("temperature_c") or u.get("temperature_C"))
+            temp_c = _safe_float(_first(u.get("temperature_c"), u.get("temperature_C")))
             if temp_c is None:
-                temp_k = _safe_float(
-                    extra.get("temperature_K") or extra.get("temperature_k")
-                    or extra.get("reaction_temperature_K") or extra.get("reaction_temp_K")
-                )
+                temp_k = _safe_float(_first(
+                    extra.get("temperature_K"), extra.get("temperature_k"),
+                    extra.get("reaction_temperature_K"), extra.get("reaction_temp_K"),
+                ))
                 if temp_k and temp_k > 200:
                     temp_c = round(temp_k - 273.15, 1)
+            # sanity guard: LLM-extracted units sometimes carry measurement
+            # temperatures (-196 °C N2 physisorption, room-temperature IR) in
+            # the REACTION-temperature field — not a plausible reaction
+            # condition for this chemistry, so store NULL instead
+            if temp_c is not None and not (50 <= temp_c <= 850):
+                temp_c = None
 
             # pressure: schema uses pressure_mpa (lowercase)
-            pressure = _safe_float(u.get("pressure_mpa") or u.get("pressure_MPa")
-                                   or extra.get("pressure_mpa") or extra.get("pressure_MPa"))
+            pressure = _safe_float(_first(u.get("pressure_mpa"), u.get("pressure_MPa"),
+                                          extra.get("pressure_mpa"), extra.get("pressure_MPa")))
 
             # tos: tos_h is canonical; also accept time_on_stream_h and time_on_stream_min
-            tos = _safe_float(u.get("tos_h") or extra.get("time_on_stream_h"))
+            tos = _safe_float(_first(u.get("tos_h"), extra.get("time_on_stream_h")))
             if tos is None:
                 tos_min = _safe_float(extra.get("time_on_stream_min"))
                 if tos_min is not None:
@@ -619,9 +637,9 @@ def import_evidence(conn: sqlite3.Connection) -> int:
                 u.get("modification_method"),
                 u.get("preparation_method"),
                 # Performance — handle both v1 and v2 field name variants
-                _safe_float(u.get("methanol_conv_pct")         # v2
-                            or u.get("methanol_conversion_pct") # v1
-                            or extra.get("methanol_conversion_percent")),
+                _safe_float(_first(u.get("methanol_conv_pct"),          # v2
+                                   u.get("methanol_conversion_pct"),    # v1
+                                   extra.get("methanol_conversion_percent"))),
                 _safe_float(u.get("co2_conv_pct")),
                 _safe_float(u.get("co_conv_pct")),
                 _safe_float(u.get("conversion_pct")),
@@ -630,19 +648,19 @@ def import_evidence(conn: sqlite3.Connection) -> int:
                 # We rescue it here: if this is the Zhong 2020 review and the
                 # unit has aromatic_sel_pct but no zeolite, treat it as methanol
                 # selectivity and zero out aromatic_sel_pct below.
-                _safe_float(u.get("methanol_sel_pct")
-                            or extra.get("methanol_selectivity_pct")),
-                _safe_float(u.get("btx_sel_pct")              # v2
-                            or u.get("btx_selectivity_pct")),  # v1
-                _safe_float(u.get("aromatic_sel_pct")
-                            or extra.get("aromatics_pct")),
+                _safe_float(_first(u.get("methanol_sel_pct"),
+                                   extra.get("methanol_selectivity_pct"))),
+                _safe_float(_first(u.get("btx_sel_pct"),               # v2
+                                   u.get("btx_selectivity_pct"))),     # v1
+                _safe_float(_first(u.get("aromatic_sel_pct"),
+                                   extra.get("aromatics_pct"))),
                 _safe_float(u.get("benzene_pct")),
                 _safe_float(u.get("toluene_pct")),
                 _safe_float(u.get("xylene_pct")),
                 _safe_float(u.get("c9plus_pct")),
                 _safe_float(u.get("ethylene_pct")),
-                _safe_float(u.get("propylene_pct")
-                            or extra.get("propylene_selectivity_pct")),
+                _safe_float(_first(u.get("propylene_pct"),
+                                   extra.get("propylene_selectivity_pct"))),
                 _safe_float(u.get("olefin_pct")),
                 _safe_float(u.get("paraffin_pct")),
                 _safe_float(u.get("btx_yield_pct")),
@@ -706,7 +724,11 @@ def import_tables(conn: sqlite3.Connection) -> int:
             t = json.loads(line)
             cols = t.get("columns", [])
             for j, row in enumerate(t.get("rows", [])):
-                row_id = f"{slug}::tbl{t.get('table_number','?')}::r{j+1:03d}"
+                # tool-namespaced (never collides with ingest_tables' docling
+                # rows) and keyed by the JSONL line index i, not table_number —
+                # duplicate/missing table numbers were collapsing distinct
+                # tables onto the same row_ids under INSERT OR REPLACE
+                row_id = f"{slug}::vision::t{i:03d}::r{j+1:03d}"
                 rows.append((
                     row_id,
                     review_doi,
@@ -886,6 +908,20 @@ def main() -> None:
 
         print("\nFilling primary_paper_doi from ref resolution...")
         fill_primary_paper_doi(conn)
+
+        # a rebuild re-imports evidence from JSONL, which discards the
+        # conditions that fill_conditions_regex wrote post-import — refill
+        # them here so one command always yields the complete DB state
+        print("\nRefilling regex conditions (fill_conditions_regex)...")
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import fill_conditions_regex as _fc
+        n_fill = n_note = 0
+        for (pdoi,) in conn.execute(
+                "SELECT doi FROM papers WHERE paper_type = 'primary'").fetchall():
+            r = _fc.process_paper(conn, pdoi.replace("/", "_"))
+            n_fill += r.get("updated", 0)
+            n_note += r.get("noted", 0)
+        print(f"  conditions refilled on {n_fill} units (+{n_note} noted)")
 
         print(f"\nTotal: {n_ev} evidence units, {n_tr} table rows")
         print_stats(conn)
