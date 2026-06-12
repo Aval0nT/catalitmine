@@ -94,9 +94,17 @@ geometry models — it stays OCR + human clicks regardless of route.
 - [ ] **ColumnFormer: probably NOT needed** — bars are deterministic-CV
       territory (bar_reader validated); the gap is only grayscale/hatched
       fills → add texture discrimination to bar_reader instead of a model.
-- [ ] **LineFormer standalone rewrite** (MMDetection-free, pure PyTorch) —
-      only if the probe shows quality worth owning AND the Colab notebook
-      proves too fragile as the official GPU path.
+- [ ] **LineFormer standalone port** (MMDetection-free) — DE-RISKED
+      2026-06-12: the config reveals LineFormer is 100% STOCK Mask2Former
+      (Swin-T + Mask2FormerHead, no custom layers); the post-processing
+      (line_utils: skeletonize + cubic splines) is pure scipy/skimage.
+      Port = checkpoint key-mapping into HF transformers'
+      Mask2FormerForUniversalSegmentation (any python/torch, zero mmcv)
+      + preprocessing params from the config; ~1-2 weeks part-time.
+      Parity test against the Modal probe outputs (which is one more reason
+      to run the probe first). Fallback: mmdet 3.x migration (days, but
+      stays in the version-fragile OpenMMLab world). Forward-porting
+      mmcv-full 1.x to py3.12 is confirmed a dead end.
 - [ ] Route B interpretation layer (product-distribution bars → product
       spectra; TOS curves → deactivation metrics) — see
       figure_reader_design.md.
