@@ -41,17 +41,16 @@ geometry models — it stays OCR + human clicks regardless of route.
       `figures/lineformer_probe.zip` (30 images, 10 figures incl. the two
       grayscale killers), download `lineformer_probe_results.zip` into
       `figures/`. This decides the geometry-layer ceiling.
-- [ ] **Three quick fixes to line_reader** *(owner: Claude, ~0.5 session)* —
-      from the C15/C40 example review:
-  - [ ] flip pixel-y when uncalibrated (re-plots currently MIRROR the trend —
-        explains most of the "completely wrong" impression)
-  - [ ] legend-name sanity filter ('eeje/e', '3eeeee' must never pass; fall
-        back to colour names)
-  - [ ] panel-level bar-vs-line detector → route bar panels to bar_reader
-        instead of tracing bar outlines as lines
 - [ ] **Fuse probe results** *(owner: Claude, after probe)* — LineFormer
       traces + existing calibration layer → 3-way verification HTML
-      (original | LineFormer | CV reader); judged by eye.
+      (original | LineFormer | CV reader); judged by eye. Includes the
+      pixel-y FLIP in the display layer (re-plots currently mirror trends —
+      applies to any pixel-trace source, LineFormer included).
+- [~] ~~Three quick fixes to line_reader~~ *(deprioritized 2026-06-12: the
+      route moved to LineFormer-first, so standalone CV-reader fixes lose
+      value; y-flip folded into the fusion display above, junk-name filter
+      and bar/line routing revisit only if the CV reader stays in the
+      cascade after the probe verdict)*
 
 ## NEXT — queued, order flexible
 
