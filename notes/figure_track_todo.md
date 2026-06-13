@@ -113,15 +113,22 @@ inventory ("(a) ..., (b) ..."). One caption typically names the catalysts
 count/content (routing prior), and often reaction conditions (T, TOS). The
 three items below each consume it; the geometry models never see it.*
 
-- [ ] **Gold-set triage query** — CAPTION-DRIVEN: match catalyst names in
-      caption text against existing property records in the DB, and filter
-      panels by performance keywords (conversion/selectivity/yield/TOS) vs
-      characterization (SEM/XRD/NMR/TGA — skip). Which figures, if digitized,
-      JOIN into structure–activity records? Target the valuable ~20–40
-      figures, not all 148. Also produce a caption-coverage diagnostic
-      (502/974 crops have empty captions — partly real non-figures
-      [schemes, graphical abstracts], partly Docling capture misses;
-      quantify before trusting the filter as an exclusion gate).
+- [x] **Gold-set triage query** DONE (2026-06-13):
+      scripts/analysis/triage_figures.py → outputs/reports/figure_triage_2026-06-13.{jsonl,md}.
+      Caption-driven REVERSE matching (known property-catalyst labels matched
+      INTO caption text, within-paper, reusing norm_label) + scope typing +
+      a LineFormer geometry sweep + a visual scatter census. Result:
+      191 performance figures → **32 tier-A+B** (19 hard caption-matched) —
+      in the ~20–40 target. Coverage reality surfaced: 29/51 figure-papers
+      have NO property records, so 117 figures are capped at tier C by
+      CORPUS COVERAGE, not figure quality (the property-extraction side
+      hasn't covered them). Adversarial review (17-agent) caught + fixed:
+      a hyphen-boundary matcher bug (C-HZSM-5 matched inside Zn-C-HZSM-5 →
+      wrong-sample property join), self_contained auto-A trusting scope
+      mistypes (TEA plots / synthesis schemes typed structure_activity),
+      and a pool≥3 zero-match tier-B inflation (40 speculative figures,
+      mostly one review paper's mechanism schematics) → demoted to
+      C-speculative.
 - [ ] **Panel-crop routing before LineFormer** — composites lose ~0.3
       coverage at 512 px (Phase 2 data); split into panels first. Use the
       caption's panel inventory as PRIOR + VALIDATION for the visual
@@ -146,7 +153,23 @@ three items below each consume it; the geometry models never see it.*
 
 ## LATER — only if the probe/tests justify it
 
-- [ ] **MarkerFormer v1** (the "ScatterFormer" idea — name taken by a CVPR'24
+- [ ] **MarkerFormer v1** — JUSTIFIED by the 2026-06-13 triage census (the
+      go/no-go this was waiting on). My first-pass NO-GO was WRONG and the
+      adversarial review caught it: the LineFormer trace-count heuristic only
+      inspected the 0-2 trace bucket (correctly all bars/schemes) and wrongly
+      extrapolated "zero scatter" to the never-inspected ≥3-trace bucket —
+      where LineFormer CHAINS disconnected markers into spurious traces. A
+      visual census of all 55 high-value line/scatter figures found **10
+      genuine disconnected-marker scatter targets, 5 of them tier-A
+      structure–activity correlation plots** (Activity/Deactivation vs NH₃
+      capacity [anie fig39]; C4-HTI vs aromatics yield [jcat.2018 fig15];
+      selectivity/lifetime vs Brønsted-acid density [s1872 fig30/fig32];
+      TOS deactivation [catcom fig05]). These are property-on-x /
+      activity-on-y plots — exactly the project's most valuable figure type,
+      and exactly LineFormer's blind spot. So MarkerFormer is GO when the
+      figure track resumes; the 10 are listed in
+      outputs/reports/scatter_census_2026-06-13.json (markerformer_targets).
+      (the "ScatterFormer" idea — name taken by a CVPR'24
       3D-point-cloud paper, rename on release): marker detection + shape
       classification (circle/square/triangle × open/filled). Verdict from
       2026-06-12 evaluation: FEASIBLE and simpler than LineFormer's task.
@@ -267,6 +290,19 @@ coverage on confident regions (all passed; see NOW). Implication for the
 cascade: feed LineFormer panel CROPS, not full composites — fulls lose
 ≈0.3 coverage to downscaling at 512 px while their own crops score 0.85–1.00.
 
+**2026-06-13 — triage census: two findings.** (1) The scatter go/no-go
+FLIPPED on verification — see MarkerFormer above. Lesson: a 0-trace
+LineFormer result reliably means "not a line chart", but a ≥3-trace result
+does NOT mean "is a line chart" (it chains dense/disconnected markers), so
+geometry routing cannot be decided by trace count alone — a visual pass is
+required for the line-vs-scatter call. (2) Caption shape-typing is noisy in
+BOTH directions: of 55 caption-typed "line/scatter" high-value figures, the
+visual census found 12 were reaction schemes / process diagrams / graphical
+abstracts (one review paper, s1872-2067(22)64209-8, contributed most of
+them — reviews are scheme-dense), ~8 were actually bar charts, and many
+"lines" were marker scatter. The honest geometry gate is LineFormer-empty
+(→ not a line) + a cheap visual chartness/scatter check, not the caption.
+
 **2026-06-12 — LineFormer licensing / release facts** (user asked whether the
 port can become "our own fork"). github.com/TheJaeLal/LineFormer has NO
 LICENSE file → default all-rights-reserved; the README invites use + citation
@@ -302,3 +338,13 @@ iteration (agent fleets) is the actual token cost driver.
       manual calibration UI only?
 - [ ] Gold-set size & acceptance bar for the first structure–activity
       expansion from figures (target: 38 numeric SA records → 100+?).
+- [x] ~~Should scatter recognition (MarkerFormer) be built?~~ RESOLVED
+      2026-06-13: YES — the triage census found 10 disconnected-marker SA
+      scatter figures in the high-value pool (5 tier-A), LineFormer's blind
+      spot. NO-GO was wrong. Sequencing: the ~18 census-confirmed line
+      figures + ~8 bars are digitizable NOW with existing tools; MarkerFormer
+      unlocks the 10 scatter SA plots after.
+- [ ] **Biggest leverage is upstream, not figures**: 29/51 figure-papers have
+      ZERO property records, capping 117 performance figures at tier C. The
+      table/property-extraction side covers only 33 papers — expanding it
+      lifts more figures into joinable range than any figure-reader work.
