@@ -3,7 +3,7 @@
 *The single source of truth for the figure→data effort. Update every working
 session: move items between sections, date the decisions, never delete history.*
 
-*Last updated: 2026-06-12*
+*Last updated: 2026-06-13*
 
 **Why this track exists:** structure–activity records are the ML bottleneck
 (59 by attributes, 38 numeric) and the missing performance numbers live in
@@ -20,23 +20,37 @@ Pure-auto 80–90 % end-to-end reliability is judged unrealistic (long-tail
 journal styles); auto + gate reaches ~100 % precision on accepted data by
 construction.
 
-Routing cascade (human confirms figure type, then):
+Pipeline (updated 2026-06-13 — VLM typing + triage now front the cascade;
+LineFormer is local CPU, not Colab):
 
 ```
-colored, well-separated line/scatter → line_reader.py (CV, local, instant)
-grayscale / black / same-hue pairs / crossing lines → LineFormer (Colab GPU)
-bar charts → bar_reader.py (validated ≤0.5 %)
-all → verification HTML → human: accept / fix / reject
+① VLM typing (Haiku, ~$1-2/corpus): chart vs scheme/spectrum/micrograph;
+     per-panel geometry [line/scatter/bar]; is_performance?  → drop non-charts
+② Triage (caption + DB JOIN): which figures close SA records?  → pick ~20-40
+③ Route by panel geometry:
+     line / connected-marker  → LineFormer (HF port, local CPU)
+     bar                      → bar_reader.py (CV, validated ≤0.5 %)
+     disconnected scatter     → MarkerFormer (NOT BUILT — the only open gap)
+④ Semantic layer: pixels → values (axis calibration + legend=catalyst name)
+     = OCR + VLM + human clicks; NO geometry model solves this
+⑤ Verification HTML → human gate: accept / fix / reject  → DB
 ```
 
-Semantic layer (axis calibration + legend names) is NOT solved by any of the
-geometry models — it stays OCR + human clicks regardless of route.
+Geometry models return PIXEL TRACES only. The semantic layer (④) is a
+distinct, unbuilt step; LineFormer/bar_reader/MarkerFormer never produce
+real data values on their own.
 
 ---
 
 ## NOW — in flight
 
-- [ ] **LineFormer → HF standalone port** *(owner: Claude; GREENLIT by
+*Status 2026-06-13: LineFormer port (all 3 phases), the VLM typing pilot, the
+caption-driven triage, and the scatter census are DONE and committed. Nothing
+is actively mid-code right now — the next committed pieces are in NEXT, led by
+MarkerFormer. CLAHE for light colours was tested (below).*
+
+- [x] **LineFormer → HF standalone port — ALL 3 PHASES DONE 2026-06-13**
+      *(owner: Claude; GREENLIT by
       Yuang 2026-06-12 after reviewing the 3-way page: "traces 非常准确";
       noted weakness on very light colours — tune via input contrast
       preprocessing later, tracked below)*.
@@ -94,9 +108,14 @@ geometry models — it stays OCR + human clicks regardless of route.
       for inference. Remaining wiring (queued in NEXT): caption-prior
       panel-crop routing before the model, axis fusion / human-gate display
       for .lfline.json.
-- [ ] light-colour trace dropout — try contrast/CLAHE preprocessing before
-      inference once the port runs locally (user observation from the probe
-      review).
+- [~] light-colour trace dropout — CLAHE TESTED 2026-06-13
+      (viz_traces.py --prep): CLAHE on the LAB-L channel recovers pale traces
+      (+5 net across probe panels; weak-trace scores 0.34→0.76 on the dense
+      gradient panel) but is NOT safe as a blind default — 3 clean panels each
+      lose 1 trace. Saturation boost HURTS. Verdict: keep CLAHE as an opt-in
+      toggle in the gate, not a default; and the dropout mostly hits low-value
+      pale-gradient spectra — saturated performance charts already extract
+      cleanly, so this is a minor polish, not a blocker.
 - [~] ~~Three quick fixes to line_reader~~ *(deprioritized 2026-06-12: the
       route moved to LineFormer-first, so standalone CV-reader fixes lose
       value; y-flip folded into the fusion display above, junk-name filter
@@ -113,6 +132,32 @@ inventory ("(a) ..., (b) ..."). One caption typically names the catalysts
 count/content (routing prior), and often reaction conditions (T, TOS). The
 three items below each consume it; the geometry models never see it.*
 
+- [ ] **MarkerFormer — disconnected-marker scatter (THE open geometry gap; GO).**
+      Confirmed needed by the 2026-06-13 census: 10 genuine disconnected-marker
+      scatter plots in the high-value pool, **5 of them tier-A
+      structure–activity correlation plots** (property-on-x / activity-on-y —
+      the project's most valuable figure type, and exactly LineFormer's blind
+      spot). Targets listed in
+      outputs/reports/scatter_census_2026-06-13.json (markerformer_targets).
+      Name: MarkerFormer (the "ScatterFormer" name is taken by a CVPR'24
+      3D-point-cloud paper). Task: marker detection + shape classification
+      (circle/square/triangle × open/filled) — FEASIBLE and simpler than
+      LineFormer's. Recipe (Benetech-winner standard):
+  - [ ] synthetic chart generator — matplotlib renders ∞ labelled scatter
+        plots in catalysis-journal styles (serif fonts, JPEG artefacts,
+        grayscale, dual axes, gridlines)
+  - [ ] train YOLO-s / DETR-small on synthetic (Colab T4 / Kaggle P100 free)
+  - [ ] fine-tune + eval on the human-gate gold set (the calibrate UI produces
+        it for free)
+  - register as a chart_extractor backend ("markerformer") alongside lineformer
+  - realistic v1: 2–4 weeks part-time; burns free GPU-hours, not tokens
+- [ ] **Run VLM typing over the corpus + wire into the pipeline.** Pilot
+      passed 12/12 (Haiku, scripts/extraction/vlm_classify.py). Next: batch
+      over the 191 high-value figures (~$0.4) — or all 974 (~$1–2) — cache to
+      outputs/reports/vlm_scope.jsonl, and let triage consume the VLM
+      geometry/typing instead of caption keywords (fixes the bar/scheme
+      mistypes triage currently inherits from scope_figures). Doing the 191
+      first also pins the exact MarkerFormer target count with real labels.
 - [x] **Gold-set triage query** DONE (2026-06-13):
       scripts/analysis/triage_figures.py → outputs/reports/figure_triage_2026-06-13.{jsonl,md}.
       Caption-driven REVERSE matching (known property-catalyst labels matched
@@ -153,41 +198,23 @@ three items below each consume it; the geometry models never see it.*
 
 ## LATER — only if the probe/tests justify it
 
-- [ ] **MarkerFormer v1** — JUSTIFIED by the 2026-06-13 triage census (the
-      go/no-go this was waiting on). My first-pass NO-GO was WRONG and the
-      adversarial review caught it: the LineFormer trace-count heuristic only
-      inspected the 0-2 trace bucket (correctly all bars/schemes) and wrongly
-      extrapolated "zero scatter" to the never-inspected ≥3-trace bucket —
-      where LineFormer CHAINS disconnected markers into spurious traces. A
-      visual census of all 55 high-value line/scatter figures found **10
-      genuine disconnected-marker scatter targets, 5 of them tier-A
-      structure–activity correlation plots** (Activity/Deactivation vs NH₃
-      capacity [anie fig39]; C4-HTI vs aromatics yield [jcat.2018 fig15];
-      selectivity/lifetime vs Brønsted-acid density [s1872 fig30/fig32];
-      TOS deactivation [catcom fig05]). These are property-on-x /
-      activity-on-y plots — exactly the project's most valuable figure type,
-      and exactly LineFormer's blind spot. So MarkerFormer is GO when the
-      figure track resumes; the 10 are listed in
-      outputs/reports/scatter_census_2026-06-13.json (markerformer_targets).
-      (the "ScatterFormer" idea — name taken by a CVPR'24
-      3D-point-cloud paper, rename on release): marker detection + shape
-      classification (circle/square/triangle × open/filled). Verdict from
-      2026-06-12 evaluation: FEASIBLE and simpler than LineFormer's task.
-      Recipe (Benetech-winner standard):
-  - [ ] synthetic chart generator — matplotlib renders ∞ labelled scatter
-        plots in catalysis-journal styles (serif fonts, JPEG artefacts,
-        grayscale, dual axes, gridlines)
-  - [ ] train YOLO-s/DETR-small on synthetic (Colab T4 / Kaggle P100 free
-        tier is sufficient)
-  - [ ] fine-tune + eval on the human-gate gold set (the correction UI
-        produces it for free)
-  - realistic v1 effort: 2–4 weeks part-time; burns GPU-hours (free), not
-    tokens
+- **MarkerFormer — PROMOTED to NEXT (GO).** See the NEXT entry for the recipe
+      and targets. History worth keeping: the first-pass NO-GO verdict was
+      WRONG and the 17-agent adversarial review caught it — the LineFormer
+      trace-count heuristic only inspected the 0-2 trace bucket (correctly all
+      bars/schemes) and wrongly extrapolated "zero scatter" to the
+      never-inspected ≥3-trace bucket, where LineFormer CHAINS disconnected
+      markers into spurious traces. The visual census of all 55 high-value
+      line/scatter figures then found the 10 real scatter targets. Lesson: a
+      cheap heuristic's BLIND SPOT (the bucket it never looks at) is where the
+      wrong conclusion hides — verify the un-inspected region before
+      generalizing.
 - [ ] **ColumnFormer: probably NOT needed** — bars are deterministic-CV
       territory (bar_reader validated); the gap is only grayscale/hatched
       fills → add texture discrimination to bar_reader instead of a model.
-- [ ] **LineFormer standalone port** (MMDetection-free) — DE-RISKED
-      2026-06-12: the config reveals LineFormer is 100% STOCK Mask2Former
+- [x] **LineFormer standalone port** (MMDetection-free) — DONE 2026-06-13
+      (see NOW). DE-RISKED 2026-06-12: the config reveals LineFormer is 100%
+      STOCK Mask2Former
       (Swin-T + Mask2FormerHead, no custom layers); the post-processing
       (line_utils: skeletonize + cubic splines) is pure scipy/skimage.
       Port = checkpoint key-mapping into HF transformers'
@@ -205,6 +232,24 @@ three items below each consume it; the geometry models never see it.*
 
 ## DONE
 
+- [x] 2026-06-13 — **LineFormer → HF port, all 3 phases** (commits 0f17a01,
+      ff3e7f9): mmdet→HF conversion (481 tensors, 30/30 instance-count parity),
+      line_postproc reimplementation (125/129 coordinate traces bit-identical),
+      registered as chart_extractor "lineformer" backend; runs local CPU
+      ~0.7 s/fig on Apple Silicon (MPS verified identical). mmcv/mmdet/Modal
+      no longer needed for inference.
+- [x] 2026-06-13 — **VLM figure-typing pilot** (vlm_classify.py): Haiku 4.5
+      zero-shot, scored 12/12 on a hand-labelled validation set
+      (figure_kind / is_performance / disconnected-scatter), beating the
+      caption-keyword classifier on exactly its failure cases (FT-IR→spectrum,
+      scheme, bar). Whole-corpus cost ≈ $1–2. Verdict: Haiku sufficient, no
+      Sonnet escalation. Establishes the "cheap VLM for low-volume semantic
+      typing" tier of the pipeline.
+- [x] 2026-06-13 — **caption-driven triage** (triage_figures.py, commit pending
+      this session): 191 perf figures → 32 tier-A+B (19 hard-matched), in the
+      ~20–40 target; surfaced the 29/51-papers coverage gap; 17-agent review
+      fixed 3 matcher/tiering bugs. + scatter census → MarkerFormer GO (10
+      targets, 5 tier-A).
 - [x] 2026-06-12 — **line_reader.py v1** (commit 632029a): deterministic
       line/scatter reader (numpy+Pillow+SciPy+Tesseract, no model/API).
       Corpus: 109/148 figures yield series (~16k pts), 22 panels fully
@@ -323,6 +368,20 @@ the dead mmdet stack. Cite the ICDAR 2023 paper in all cases.
 **2026-06-12 — cost model.** This route burns free GPU-hours and human gate
 time, NOT API tokens. Optional vision-semantic pass ≈ $2–5 total. Dev
 iteration (agent fleets) is the actual token cost driver.
+
+**2026-06-13 — "LLM-free" is a means, not a creed (refined).** The project is
+NOT purely LLM-free, and shouldn't claim to be. The honest principle, drawn by
+task shape: be LLM-free where the task is (a) high-volume AND (b) verifiable —
+the TABLE TRACK (numbers have a printed ground truth to check) and GEOMETRY
+EXTRACTION (specialist models beat a VLM at precise coordinates, which VLMs
+hallucinate). Pay for a cheap LLM where the task is low-volume SEMANTIC
+JUDGMENT with no exact answer — figure typing (VLM 12/12 vs caption keywords),
+axis-quantity / legend-name reading, paper relevance screening. Concretely:
+table track = LLM-free (the badge stays true); figure typing = Haiku
+(~$1–2/corpus); geometry = LineFormer/bar_reader/MarkerFormer (LLM-free);
+numeric values = human gate. The discovery and evidence tracks already use
+Haiku — "LLM-free" was only ever a property of the table+geometry tracks, and
+the README now says so.
 
 ---
 

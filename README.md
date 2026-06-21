@@ -27,15 +27,18 @@ designed to generalize to other catalysis reactions.
 
 - **End-to-end** — research query → ranked literature → tables → **726
   per-catalyst records** from 51 papers → analysis.
-- **LLM-free where it counts** — the entire table track runs without a single
-  API call, and is roughly sixfold more complete than prose extraction.
+- **Right tool per task, not LLM-everywhere** — the table track makes zero API
+  calls and is ≈6× more complete than prose extraction; figure *typing* uses a
+  zero-shot vision model (~$1–2 for the whole corpus); geometry is read by
+  specialist models; every value is gated by a human.
 - **Provenance by construction** — every record traces to its primary source
   (gold / silver / bronze tiers).
 - **Validated, not merely built** — textbook kinetics fall out of the
   auto-extracted numbers ([Validation](#validation)).
-- **Figures → data, locally** — deterministic bar/line readers plus a
-  LineFormer port running on Apple-Silicon CPU at ~0.7 s/figure; a human
-  gate guards everything that enters the database.
+- **Figures → data, by the right extractor** — a vision model types each
+  figure, then specialist tools digitise it: a LineFormer port (Apple-Silicon
+  CPU, ~0.7 s/figure) for line panels, a CV reader for bars, MarkerFormer
+  (planned) for scatter; a human gate guards everything entering the database.
 
 ### In detail
 
@@ -47,18 +50,24 @@ papers, roughly sixfold more complete than sentence-level prose extraction
 yielded from the same corpus. **318 records already support
 condition–performance analysis.**
 
-**Figures → data, mostly API-free.** Figures are typed from their *caption*
-(free, deterministic): characterization (XRD / NH₃-TPD / Raman / IR) is gated
-out and only activity & structure–activity panels go downstream — 48/51 papers
-carry activity figures (~150 line/scatter, ~43 bar). A pixel-level CV reader
-digitises stacked and grouped **bar charts** with no model (validated to
-≤0.5 % on tall segments, ±2–4 % on small ones); a colour-clustering
-line/scatter reader covers clean coloured panels (109/148 scoped figures,
-~16,000 points; uncalibrated panels are flagged in pixel units, never
-guessed). End-to-end automatic accuracy on arbitrary journal styles is not
-yet data-grade, so the design is **auto first-pass + human gate**: a
-verification page re-plots every extraction beside the original, and only
-human-accepted data enters the database.
+**Figures → data — a typed, routed pipeline.** Each figure is first *typed* by
+a zero-shot vision model (Claude Haiku): chart vs reaction scheme vs spectrum
+vs micrograph, the per-panel geometry (line / scatter / bar), and whether it
+plots catalytic performance. On a hand-labelled validation set the vision
+typing scored 12/12 — correcting exactly the cases a caption-keyword classifier
+mishandles (an FT-IR figure whose caption merely says "conversion", a reaction
+scheme, a bar chart). A **caption-driven triage** then selects the ~20–40
+figures that would actually JOIN against existing property records into
+structure–activity records, so the human gate is spent where it pays. The
+selected figures route by geometry: bar panels to a pixel-level CV reader
+(validated to ≤0.5 % on tall segments, ±2–4 % on small), line panels to the
+LineFormer port below, and disconnected-marker **scatter** — LineFormer's blind
+spot — to MarkerFormer (planned). Geometry models return pixel traces only;
+turning pixels into values (axis calibration, legend = catalyst identity) is a
+separate semantic layer (OCR + vision model + human). End-to-end automatic
+accuracy on arbitrary journal styles is not yet data-grade, so the design is
+**auto first-pass + human gate**: a verification page re-plots every extraction
+beside the original, and only human-accepted data enters the database.
 
 **LineFormer without MMDetection, CUDA, or cloud.** The strongest published
 line-chart extractor ([LineFormer](https://github.com/TheJaeLal/LineFormer),
@@ -91,11 +100,13 @@ single fixed schema. This pipeline addresses both, across complementary tracks:
    header→attribute keyword library, then joined within each paper on the
    catalyst label into per-catalyst records (handles transposed tables,
    ligature/OCR artifacts, and Supporting-Information PDFs).
-3. **Figure track** — figures are classified by caption keywords (free),
-   keeping only activity / structure–activity panels; a deterministic CV reader
-   digitises bar charts (stacked & grouped) with no model; line/scatter panels
-   go to the HF-ported LineFormer (colour-independent instance segmentation,
-   local CPU), with a vision backend available as fallback. Output feeds the
+3. **Figure track** — a vision model types each figure and reads its per-panel
+   geometry; a caption-driven triage selects the figures that close
+   structure–activity records; then panels route by type — bar charts to a
+   deterministic CV reader, line panels to the HF-ported LineFormer
+   (colour-independent instance segmentation, local CPU), scatter to
+   MarkerFormer (planned). A semantic layer (axes + legend names) and a human
+   gate turn pixel traces into accepted data. Output feeds the
    structure–activity set.
 4. **Evidence track** — section-aware prose extraction (Claude Haiku 4.5,
    prompt-only) captures claims, mechanisms, and conditions, each tagged with a
@@ -357,22 +368,31 @@ Strategic detail: [notes/project_plan_v1.md](notes/project_plan_v1.md).
 
 ## Roadmap
 
-- **Figure track — auto first-pass + human gate** (live tracker & decision
-  log: [notes/figure_track_todo.md](notes/figure_track_todo.md)): figures
-  route by type — coloured line/scatter to the deterministic CV reader, bar
-  panels to the validated bar reader, grayscale/black/crossing-curve figures
-  to [LineFormer](https://github.com/TheJaeLal/LineFormer) (Lal et al., ICDAR
-  2023 — instance segmentation is colour-independent, exactly where
-  colour-based CV is blind; ported from MMDetection to plain HF transformers,
-  runs locally on Apple-Silicon CPU as the `lineformer` backend of
-  chart_extractor.py, coordinate parity verified against the original stack
-  on the 30-image probe) — and every extraction passes the human verification
-  page (original
-  vs re-plot; click-to-calibrate UI planned) before entering the database.
+- **Figure track — typed → triaged → routed → gated** (live tracker & decision
+  log: [notes/figure_track_todo.md](notes/figure_track_todo.md)). Built and
+  verified: vision-model figure typing (12/12 on a hand-labelled set);
+  caption-driven triage onto existing DB property records; a validated bar
+  reader; and a [LineFormer](https://github.com/TheJaeLal/LineFormer) port
+  (Lal et al., ICDAR 2023) — instance segmentation that is colour-independent
+  where colour-based CV is blind, ported from MMDetection to plain HF
+  `transformers`, running locally on Apple-Silicon CPU with coordinate parity
+  verified against the original stack. **Remaining**, in order:
+  - **MarkerFormer** — a marker-detection model for disconnected-marker scatter
+    (LineFormer's blind spot). A visual census found 10 such scatter plots in
+    the high-value pool, 5 of them tier-A structure–activity correlation plots
+    (property-on-x, activity-on-y) — the project's most valuable figure type.
+    Recipe: synthetic journal-style scatter generator → small detector
+    (YOLO/DETR) → fine-tune on the human-gate gold set. ~2–4 weeks, GPU-hours
+    not tokens.
+  - **Panel-crop routing** — split composites into single panels before the
+    geometry models (composites lose ≈0.3 coverage at 512 px), using the
+    caption / vision panel inventory as a prior.
+  - **Semantic layer** — a click-to-calibrate verification UI (click two ticks
+    per axis, confirm vision-prefilled catalyst names); every corrected figure
+    becomes ground truth for training and evaluation.
+
   For a dataset, precision of accepted data is what matters; automation only
-  sets the human cost per figure. Under evaluation: a small marker-detection
-  model trained on synthetic journal-style scatter plots (the open
-  Benetech-competition recipe). Design rationale:
+  sets the human cost per figure. Design rationale:
   [notes/figure_reader_design.md](notes/figure_reader_design.md).
 - **Phase 4**: feature matrix → XGBoost + SHAP for design rules;
   Gaussian-process regression for virtual screening of under-explored
