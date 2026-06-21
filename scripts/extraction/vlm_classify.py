@@ -105,7 +105,8 @@ def _client_lazy():
     return _client
 
 
-def classify(path: Path, model: str = "haiku") -> dict:
+def _classify_with_usage(path: Path, model: str = "haiku") -> tuple[dict, tuple[int, int]]:
+    """classify() but also returns (input_tokens, output_tokens) for cost tracking."""
     data, media = _b64_image(path)
     try:
         resp = _client_lazy().messages.create(
@@ -116,15 +117,20 @@ def classify(path: Path, model: str = "haiku") -> dict:
                 {"type": "text", "text": _PROMPT}]}],
         )
         text = "".join(b.text for b in resp.content if hasattr(b, "text")).strip()
+        usage = (resp.usage.input_tokens, resp.usage.output_tokens)
     except Exception as e:
-        return {"error": f"api: {e}"}
+        return {"error": f"api: {e}"}, (0, 0)
     m = re.search(r"\{.*\}", text, re.DOTALL)
     if not m:
-        return {"error": "no JSON", "raw": text[:200]}
+        return {"error": "no JSON", "raw": text[:200]}, usage
     try:
-        return json.loads(m.group(0))
+        return json.loads(m.group(0)), usage
     except json.JSONDecodeError as e:
-        return {"error": f"json: {e}", "raw": text[:200]}
+        return {"error": f"json: {e}", "raw": text[:200]}, usage
+
+
+def classify(path: Path, model: str = "haiku") -> dict:
+    return _classify_with_usage(path, model)[0]
 
 
 # ── pilot validation set: figures whose labels we verified by eye this session ──
@@ -175,10 +181,87 @@ def run_pilot(model: str) -> None:
     print(f"  ALL-3 correct:        {all3}/{total}")
 
 
+SCOPE = ROOT / "outputs" / "reports" / "figure_scope.jsonl"
+OUT_JSONL = ROOT / "outputs" / "reports" / "vlm_scope.jsonl"
+
+
+def _resolve(figure: str) -> Optional[str]:
+    import glob
+    hits = glob.glob(str(ROOT / "figures" / "all_charts" / "*" / figure))
+    return hits[0] if hits else None
+
+
+def run_batch(model: str, scope: str) -> None:
+    """Classify a set of figures, caching to vlm_scope.jsonl (resumable)."""
+    import glob
+
+    rows = [json.loads(l) for l in open(SCOPE)]
+    if scope == "highvalue":
+        targets = [r for r in rows if r["type"] in ("activity", "structure_activity", "mixed")]
+    else:
+        targets = rows
+    done = {}
+    if OUT_JSONL.exists():
+        for l in open(OUT_JSONL):
+            d = json.loads(l)
+            done[d["figure"]] = d
+    todo = [r for r in targets if r["figure"] not in done]
+    print(f"VLM typing · model={MODELS.get(model, model)} · {len(targets)} target(s), "
+          f"{len(done)} cached, {len(todo)} to run\n")
+
+    in_tok = out_tok = 0
+    with open(OUT_JSONL, "a") as fh:
+        for i, r in enumerate(todo, 1):
+            path = _resolve(r["figure"])
+            if not path:
+                rec = {"figure": r["figure"], "doi": r["doi"], "error": "file not found"}
+            else:
+                cls, usage = _classify_with_usage(Path(path), model)
+                in_tok += usage[0]; out_tok += usage[1]
+                rec = {"figure": r["figure"], "doi": r["doi"],
+                       "caption_type": r["type"], "caption_shape": r.get("shape"), **cls}
+            fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+            fh.flush()
+            if i % 20 == 0 or i == len(todo):
+                print(f"  {i}/{len(todo)}  (in {in_tok} / out {out_tok} tok so far)")
+    cost = in_tok * 1e-6 * 1.0 + out_tok * 1e-6 * 5.0  # Haiku $1/$5 per MTok
+    print(f"\nran {len(todo)} new · tokens in={in_tok} out={out_tok} · "
+          f"cost this run ≈ ${cost:.3f}")
+    _summarize()
+
+
+def _summarize() -> None:
+    from collections import Counter
+    rows = [json.loads(l) for l in open(OUT_JSONL)]
+    ok = [r for r in rows if "error" not in r]
+    kinds = Counter(r.get("figure_kind") for r in ok)
+    perf = sum(1 for r in ok if r.get("is_performance"))
+    scat = [r for r in ok if r.get("has_disconnected_scatter")]
+    geom = Counter(g for r in ok for g in r.get("panel_geometries", []))
+    print(f"\n=== vlm_scope.jsonl summary ({len(ok)} typed, {len(rows)-len(ok)} errors) ===")
+    print(f"figure_kind: {dict(kinds)}")
+    print(f"panel geometries (panel-level): {dict(geom)}")
+    print(f"is_performance: {perf}/{len(ok)}")
+    print(f"disconnected-scatter figures (MarkerFormer targets): {len(scat)}")
+    for r in scat:
+        print(f"   - {r['figure']}")
+    # disagreements vs caption shape
+    flip = [r for r in ok if r.get("caption_shape") == "line/scatter"
+            and "bar" in r.get("panel_geometries", []) and "line" not in r.get("panel_geometries", [])
+            and "scatter" not in r.get("panel_geometries", [])]
+    nonchart = [r for r in ok if r.get("caption_type") in ("activity", "structure_activity", "mixed")
+                and r.get("figure_kind") != "chart"]
+    print(f"caption said line/scatter but VLM says bar-only: {len(flip)}")
+    print(f"caption said performance-figure but VLM says non-chart: {len(nonchart)}")
+
+
 def main() -> None:
     _load_env()
     ap = argparse.ArgumentParser()
     ap.add_argument("--pilot", action="store_true")
+    ap.add_argument("--batch", choices=["highvalue", "all"],
+                    help="classify high-value (activity/SA/mixed) or all figures")
+    ap.add_argument("--summary", action="store_true", help="re-print vlm_scope summary")
     ap.add_argument("--model", default="haiku", choices=list(MODELS))
     ap.add_argument("--image", help="classify a single image")
     args = ap.parse_args()
@@ -186,8 +269,12 @@ def main() -> None:
         print(json.dumps(classify(Path(args.image), args.model), indent=2, ensure_ascii=False))
     elif args.pilot:
         run_pilot(args.model)
+    elif args.batch:
+        run_batch(args.model, args.batch)
+    elif args.summary:
+        _summarize()
     else:
-        raise SystemExit("pass --pilot or --image")
+        raise SystemExit("pass --pilot, --batch, --summary, or --image")
 
 
 if __name__ == "__main__":

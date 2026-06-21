@@ -238,13 +238,27 @@ three items below each consume it; the geometry models never see it.*
       registered as chart_extractor "lineformer" backend; runs local CPU
       ~0.7 s/fig on Apple Silicon (MPS verified identical). mmcv/mmdet/Modal
       no longer needed for inference.
-- [x] 2026-06-13 — **VLM figure-typing pilot** (vlm_classify.py): Haiku 4.5
-      zero-shot, scored 12/12 on a hand-labelled validation set
-      (figure_kind / is_performance / disconnected-scatter), beating the
-      caption-keyword classifier on exactly its failure cases (FT-IR→spectrum,
-      scheme, bar). Whole-corpus cost ≈ $1–2. Verdict: Haiku sufficient, no
-      Sonnet escalation. Establishes the "cheap VLM for low-volume semantic
-      typing" tier of the pipeline.
+- [x] 2026-06-13 — **VLM figure-typing pilot + 191-figure run**
+      (vlm_classify.py): Haiku 4.5 zero-shot, scored 12/12 on a hand-labelled
+      validation set, beating caption keywords on its failure cases
+      (FT-IR→spectrum, scheme, bar). Verdict: Haiku sufficient, no Sonnet.
+      Full run over the 191 high-value (caption activity/SA/mixed) figures →
+      outputs/reports/vlm_scope.jsonl, **actual cost $0.294** (197950 in /
+      19273 out tok). Headline findings:
+      • **56/191 caption "performance figures" are NOT charts** (38 scheme,
+        15 spectrum, 1 photo/micrograph each) — a 29 % caption false-positive
+        rate the VLM cleanly filters; only 135 are real charts.
+      • 13 caption "line/scatter" are bar-only (VLM corrects).
+      • disconnected-marker scatter: **39 figures** flagged, agreeing with the
+        careful 10-figure census on 9/10 of what the census saw (only catcom
+        fig05 missed) — credible, not over-flagging; the extra 30 are figures
+        the census never swept (caption-bar / tier-C).
+      • Of the 39, only **5 are tier-A+B (close SA records)** — the actionable
+        MarkerFormer pool TODAY; the other 34 are tier-C, blocked by the
+        property-coverage gap (29/51 papers have no property records). So
+        MarkerFormer value COMPOUNDS with property-extraction coverage: each
+        newly-covered paper can promote tier-C scatters into the target pool.
+      Establishes the "cheap VLM for low-volume semantic typing" tier.
 - [x] 2026-06-13 — **caption-driven triage** (triage_figures.py, commit pending
       this session): 191 perf figures → 32 tier-A+B (19 hard-matched), in the
       ~20–40 target; surfaced the 29/51-papers coverage gap; 17-agent review
