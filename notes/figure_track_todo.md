@@ -300,6 +300,27 @@ three items below each consume it; the geometry models never see it.*
 
 ## Findings & decisions log
 
+**2026-06-13 — property-coverage gap diagnosed: it's missing SI, not broken
+extraction.** 29/51 figure-papers have no property records. Breakdown after
+parsing + ingesting the 14 that had NO table_rows: all 14 parsed fine but
+Docling extracted 0 tables. Investigation (rendered pages + Sonnet read +
+grep of "Table N" vs "Table SN"): the property tables are referenced as
+**Table S1/S4/S5/S9 — i.e. in the Supplementary Information**, which the
+corpus does not hold (only main-text PDFs). Main-text "Table N" count is 0
+across 13/14. jcat.2009 page 3 confirms verbatim: characterization "shown in
+Supplementary material". A few of the 14 are reviews/DFT (checat.2022,
+s41467, s41929, s13203) with no characterization table at all. CONCLUSIONS:
+(1) Docling is NOT failing — these papers have no main-text property table to
+extract; the 22 that yielded records are the ones with main-text text-tables.
+(2) The earlier "image-table → VLM-read-table" hypothesis is REFUTED: there
+is no main-text table (image or text) to read; a Sonnet full-page read of
+jcat + checat returned empty, correctly (~$0.05–0.13/paper). (3) Per user
+decision 2026-06-13: pull property from MAIN TEXT only; do NOT chase SI for
+now. SI-bearing papers worth fetching IF needed later: checat.2023 (S1/S4),
+jechem.2025 (S1/S3/S4), acscatal.3c01491 (S5), acscatal.4c02625 (S1),
+jacs.5c06141 (S9), jacs.4c01155, jcat.2015, mtchem.2025. Side benefit: all 14
+are now parsed → their figures are cached for the figure track.
+
 **2026-06-12 — honest reliability assessment.** Component metrics ("56 % of
 panels have ≥1 calibrated axis") badly overstate end-to-end usability —
 five stages multiply (split × axes × series × names × points). User review

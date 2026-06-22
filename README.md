@@ -215,6 +215,42 @@ topics/*/pdfs/<doi>.pdf  (+ <doi>_SI.pdf)
                   feature matrix · density audit · correlations
 ```
 
+The **table track** above supplies the *structure* half of every
+structure–activity record (BET, Si/Al, acidity, pore — the catalyst's
+properties). The *activity* half — conversion/selectivity/yield read off the
+plots — comes from the **figure track**, which joins back onto the same
+catalyst records:
+
+```
+figure crops + captions          scripts/extraction/extract_figures.py
+      │  scripts/extraction/vlm_classify.py
+      ▼   ── VLM types each figure + per-panel geometry; drops schemes/spectra
+typed figures
+      │  scripts/analysis/triage_figures.py
+      ▼   ── which figures JOIN existing property records → the ~20–40 worth digitising
+selected figures, routed by geometry:
+      ├─▶ bar_reader.py              bar panels      (CV, validated ≤0.5 %)   ─┐
+      ├─▶ lineformer_port/           line panels     (HF port, local CPU)      ├─▶ PIXEL traces
+      └─▶ MarkerFormer (planned)     scatter panels  (LineFormer's blind spot)─┘        │
+                                                                                         ▼
+      ★ SEMANTIC LAYER — the critical, still-being-built step ★
+        axis calibration (OCR + click two ticks) + legend = catalyst identity (VLM-prefilled)
+        via a click-to-calibrate verification page = the HUMAN GATE
+      └── turns pixel traces into real values, then JOINs the catalyst's properties ──┐
+                                                                                       ▼
+                                          structure–activity records  (data/05 + db)
+```
+
+> **Why the semantic layer is the bottleneck, not another model.** The geometry
+> models (LineFormer, bar_reader, MarkerFormer) only ever return *pixel*
+> traces — `x = 137 px, y = 204 px`. Turning those into `TOS = 10 h,
+> conversion = 95 %` needs axis calibration and series → catalyst-name mapping;
+> no geometry model does this. It is OCR + a vision model + two human clicks
+> per axis, and it is what stands between "traces extracted" and "data in the
+> database." Building it (a click-to-calibrate page that doubles as the human
+> gate and emits training-grade ground truth) is the figure track's current
+> priority — ahead of any new extractor.
+
 ### Key modules
 
 | Path | Role |
@@ -226,11 +262,14 @@ topics/*/pdfs/<doi>.pdf  (+ <doi>_SI.pdf)
 | `schema/table_attribute_keywords.json` | Maintainable header→attribute keyword library |
 | `scripts/analysis/validate_data.py` | Density / joinability / correlation go-no-go check |
 | `scripts/extraction/extract_figures.py` | **Figure track** — Docling figure crops + captions |
-| `scripts/extraction/scope_figures.py` | **Figure track** — caption-based corpus figure inventory (no API) |
+| `scripts/extraction/vlm_classify.py` | **Figure track** — VLM figure typing (kind + per-panel geometry + is-performance); zero-shot Haiku, ~$1–2/corpus |
+| `scripts/analysis/triage_figures.py` | **Figure track** — selects the figures that JOIN existing property records into structure–activity records |
 | `scripts/extraction/bar_reader.py` | **Figure track** — deterministic CV reader for bar charts (no model) |
-| `scripts/extraction/line_reader.py` | **Figure track** — deterministic line/scatter reader: OCR-calibrated axes, legend OCR, verification HTML (no model) |
-| `scripts/extraction/chart_extractor.py` | **Figure track** — pluggable backend interface (vision, cv-line, lineformer) |
-| `scripts/analysis/build_structure_activity.py` | **Figure track** — chart points → structure–activity dataset |
+| `scripts/extraction/lineformer_port/` | **Figure track** — LineFormer ported to HF `transformers` (line panels, local CPU); converter + inference + parity checks |
+| `scripts/extraction/line_reader.py` | **Figure track** — deterministic colour-clustering line/scatter reader (no model; pre-LineFormer fallback) |
+| `scripts/extraction/chart_extractor.py` | **Figure track** — pluggable geometry-backend interface (vision, cv-line, lineformer) |
+| _semantic layer / click-to-calibrate_ | **Figure track — planned, the current priority** — pixel traces → real values (axis calibration + legend = catalyst), doubling as the human gate |
+| `scripts/analysis/build_structure_activity.py` | **Figure track** — calibrated chart points → structure–activity dataset |
 | `scripts/extraction/extract_docling_v2.py` | **Evidence track** — section-aware prose extraction |
 | `scripts/analysis/resolve_refs_openalex.py` | In-text citation → primary DOI resolver (provenance) |
 | `scripts/search/semantic_scholar.py` | S2 wrapper (citations, references, recommendations) |
